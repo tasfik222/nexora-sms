@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowDownToLine, FileArchive, Package } from "lucide-react"
+import { Activity, ArrowDownToLine, Archive, Bot, Cable, Database, FileArchive, Package, Settings2, ShieldCheck, WalletCards } from "lucide-react"
 
 export default function Home() {
   const [downloading, setDownloading] = useState(false)
@@ -73,22 +73,69 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="details-grid" aria-label="Download details">
-        <article className="detail-card">
-          <span className="detail-index">01</span>
-          <h2>Everything in one place</h2>
-          <p>The complete v6 package, neatly bundled as a single ZIP archive.</p>
-        </article>
-        <article className="detail-card">
-          <span className="detail-index">02</span>
-          <h2>Ready to get started</h2>
-          <p>Keep your project files together and pick up right where you left off.</p>
-        </article>
-        <article className="detail-card">
-          <span className="detail-index">03</span>
-          <h2>Simple and straightforward</h2>
-          <p>Select download and save the complete package to your device.</p>
-        </article>
+      <section className="overview-section" aria-labelledby="modules-title">
+        <div className="section-heading">
+          <span className="section-kicker">PROJECT BREAKDOWN</span>
+          <h2 id="modules-title">A closer look inside</h2>
+          <p>A modular Python Telegram bot with integrations, account records, activity tools, and admin workflows.</p>
+        </div>
+
+        <div className="details-grid module-grid">
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Bot size={18} /></span><code>bot.py</code></div>
+            <h3>Telegram experience</h3>
+            <p>Conversation menus, help, balance views, activity tools, and admin controls.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Cable size={18} /></span><code>api_client.py</code></div>
+            <h3>Service integrations</h3>
+            <p>Connects configured providers and normalizes available services, ranges, and incoming messages.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Database size={18} /></span><code>storage.py</code></div>
+            <h3>Account records</h3>
+            <p>Local per-user balance and activity history, with safeguards against duplicate credits.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><WalletCards size={18} /></span><code>withdrawals.py</code></div>
+            <h3>Request management</h3>
+            <p>Tracks pending, completed, rejected, and cancelled withdrawal requests for admin review.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Activity size={18} /></span><code>traffic.py · console_api.py</code></div>
+            <h3>Activity insights</h3>
+            <p>Summarizes recent service activity and parses live console entries for the bot interface.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><FileArchive size={18} /></span><code>channel_feed.py · otp_format.py</code></div>
+            <h3>Message presentation</h3>
+            <p>Formats incoming message notices; optional channel updates mask number details by default.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Archive size={18} /></span><code>backup.py</code></div>
+            <h3>Backup and recovery</h3>
+            <p>Creates data snapshots and supports restoring user records and request history.</p>
+          </article>
+          <article className="detail-card module-card">
+            <div className="module-card-top"><span className="module-icon"><Settings2 size={18} /></span><code>settings.py</code></div>
+            <h3>Runtime settings</h3>
+            <p>Holds the configurable menu, service, and rate settings used by the bot.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="bot-summary" aria-labelledby="bot-summary-title">
+        <div className="summary-main">
+          <span className="section-kicker">AFTER SETUP</span>
+          <h2 id="bot-summary-title">What the bot does</h2>
+          <p>After setup, the bot provides a Telegram interface for authorized SMS verification workflows. It connects configured services, delivers incoming verification messages, tracks user balances and activity, and lets administrators review settings and requests.</p>
+          <p className="stack-note">Built with Python, python-telegram-bot, and HTTPX. Dependencies are listed in requirements.txt.</p>
+        </div>
+        <aside className="safety-note" aria-label="Authorized testing notice">
+          <span className="safety-icon"><ShieldCheck size={18} /></span>
+          <h3>Use with authorization</h3>
+          <p>Only connect services, phone numbers, and accounts you own or are explicitly authorized to test.</p>
+        </aside>
       </section>
 
       <footer className="footer">
