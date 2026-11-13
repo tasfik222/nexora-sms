@@ -7,6 +7,8 @@ Settings:
     default_price       reward in PAISA for every SMS on a range that has no price of its own (default 30 = ৳0.30).
     range_prices        {range: paisa} - a different reward for a specific range.
                         Changed from the admin panel (Admin -> 💰 Range prices).
+    maintenance         True = bot is stopped for users (update in progress); admins can still use it.
+                        Changed from the admin panel (Admin -> 🛑 Stop / ▶️ Start).
     range_names         {range: "display name"} - a custom name shown to users instead of the raw range.
                         Changed from the admin panel (Admin -> 🏷 Range names).
 """
@@ -37,7 +39,7 @@ def range_key(range_str: str) -> str:
 class SettingsStore:
     def __init__(self) -> None:
         self.path = Path(os.getenv("LOCAL_DATA_DIR") or "data") / "settings.json"
-        self._data: dict = {"numbers_per_range": DEFAULT_NUMBERS, "default_price": DEFAULT_PRICE, "range_prices": {}, "range_names": {}}
+        self._data: dict = {"numbers_per_range": DEFAULT_NUMBERS, "default_price": DEFAULT_PRICE, "range_prices": {}, "range_names": {}, "maintenance": False}
         self.load()
 
     def load(self) -> None:
@@ -51,6 +53,7 @@ class SettingsStore:
                     range_key(k): self._price(v, None) for k, v in prices.items()
                     if range_key(k) and self._price(v, None) is not None
                 }
+                self._data["maintenance"] = bool(raw.get("maintenance", False))
                 names = raw.get("range_names") or {}
                 self._data["range_names"] = {
                     range_key(k): self._name(v) for k, v in names.items()
@@ -127,6 +130,15 @@ class SettingsStore:
             return False
         self._save()
         return True
+
+    # -- maintenance (stop / start) ----------------------------------------------
+    @property
+    def maintenance(self) -> bool:
+        return bool(self._data["maintenance"])
+
+    def set_maintenance(self, on: bool) -> None:
+        self._data["maintenance"] = bool(on)
+        self._save()
 
     # -- range names ------------------------------------------------------------
     @property
