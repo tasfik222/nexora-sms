@@ -12,7 +12,7 @@ export async function GET() {
   const token = process.env.GITHUB_TOKEN
   if (!token) {
     return NextResponse.json(
-      { error: "GITHUB_TOKEN কনফিগার করা নেই। Vercel Project Settings → Vars-এ সেট করুন।" },
+      { error: "Downloads are temporarily unavailable. Please try again later." },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     )
   }
@@ -30,7 +30,7 @@ export async function GET() {
 
     if (!githubResponse.ok) {
       return NextResponse.json(
-        { error: "Private GitHub archive আনা যায়নি। Token-এর repo access এবং Vars configuration যাচাই করুন।" },
+        { error: "The download is temporarily unavailable. Please try again later." },
         { status: 502, headers: { "Cache-Control": "no-store" } },
       )
     }
@@ -50,7 +50,7 @@ export async function GET() {
 
     if (Object.keys(selectedFiles).length === 0) {
       return NextResponse.json(
-        { error: "Repository-তে files v6 ফোল্ডারটি পাওয়া যায়নি।" },
+        { error: "The requested package is not available right now." },
         { status: 404, headers: { "Cache-Control": "no-store" } },
       )
     }
@@ -66,7 +66,7 @@ export async function GET() {
     })
   } catch {
     return NextResponse.json(
-      { error: "ZIP archive তৈরি করা যায়নি। কিছুক্ষণ পর আবার চেষ্টা করুন।" },
+      { error: "The download could not be prepared. Please try again later." },
       { status: 502, headers: { "Cache-Control": "no-store" } },
     )
   }

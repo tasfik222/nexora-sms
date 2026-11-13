@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Nexora v6 — ফাইল ডাউনলোড",
-  description: "Nexora Telegram Bot v6-এর সম্পূর্ণ ফোল্ডার একটি ZIP archive হিসেবে ডাউনলোড করুন।",
+  title: "Nexora v6 — Project Download",
+  description: "Download the complete Nexora Telegram Bot v6 project package as a ZIP archive.",
   robots: { index: false, follow: false },
 }
 
@@ -15,7 +15,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="bn">
+    <html lang="en">
       <body>{children}</body>
     </html>
   )
