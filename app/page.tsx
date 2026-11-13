@@ -1,7 +1,21 @@
 "use client"
 
 import { useState } from "react"
-import { Activity, ArrowDownToLine, Archive, Bot, Cable, Database, FileArchive, Package, Settings2, ShieldCheck, WalletCards } from "lucide-react"
+import {
+  Activity,
+  ArrowDownToLine,
+  ArrowUpRight,
+  Archive,
+  Bot,
+  Cable,
+  Database,
+  FileArchive,
+  MessageCircle,
+  Package,
+  Settings2,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react"
 
 export default function Home() {
   const [downloading, setDownloading] = useState(false)
@@ -41,6 +55,17 @@ export default function Home() {
         <a className="brand" href="/" aria-label="Nexora home">
           <span className="brand-mark"><Package size={19} strokeWidth={1.8} /></span>
           <span>nexora<span className="brand-period">.</span></span>
+        </a>
+        <a
+          className="support-button"
+          href="https://t.me/ldrofbtw"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Contact support on Telegram"
+        >
+          <MessageCircle size={16} />
+          <span>Support</span>
+          <ArrowUpRight size={14} aria-hidden="true" />
         </a>
       </header>
 
