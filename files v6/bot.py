@@ -1253,7 +1253,7 @@ async def handle_price_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     again = InlineKeyboardMarkup([[btn("⬅️ Back", callback_data="adm:price")]])
     if isinstance(mode, dict):                      # picked from the range list
         rng = mode.get("range", "")
-        back = InlineKeyboardMarkup([[btn("⬅️ Back to ranges", callback_data=f"adm:ppg:{mode.get('key', '')}:{mode.get('page', 0)}")]])
+        back = InlineKeyboardMarkup([[btn("⬅️ Back to ranges", callback_data=f"adm:ppg:{mode.get('key', '')}:{mode.get('sv', 0)}:{mode.get('page', 0)}")]])
         paisa = parse_price(text)
         if paisa is None or not st.set_range_price(rng, paisa):
             await msg.reply_text(f"⚠️ Send a valid amount in taka, like 0.50 (max 2 decimals, up to {money(MAX_PRICE)}).",
@@ -1307,7 +1307,7 @@ async def handle_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     msg, st = update.effective_message, settings_of(context)
     sel = context.user_data.get("adm_name") or {}
     rng = sel.get("range", "")
-    back = InlineKeyboardMarkup([[btn("⬅️ Back to ranges", callback_data=f"adm:npg:{sel.get('key', '')}:{sel.get('page', 0)}")]])
+    back = InlineKeyboardMarkup([[btn("⬅️ Back to ranges", callback_data=f"adm:npg:{sel.get('key', '')}:{sel.get('sv', 0)}:{sel.get('page', 0)}")]])
     if not rng or not st.set_range_name(rng, text):
         await msg.reply_text("⚠️ Send a name (text, up to %d characters)." % MAX_NAME_LEN, reply_markup=back)
         return
@@ -1462,14 +1462,47 @@ def price_servers_view(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineK
     return "💰 <b>Set range price</b>\n\nChoose a server, then tap the range you want to price 👇", InlineKeyboardMarkup(rows)
 
 
-def name_ranges_view(context: ContextTypes.DEFAULT_TYPE, key: str, page: int,
-                     mode: str = "n") -> tuple[str, InlineKeyboardMarkup]:
-    """Range picker for the admin. mode "n" = rename ranges, "p" = set range prices."""
+def _svc_cache(context, key: str) -> list:
+    return context.user_data.get("adm_svc", {}).get(key) or []
+
+
+def _nav(rows: list, page: int, pages: int, cb) -> None:
+    nav = []
+    if page > 0:
+        nav.append(btn("⬅️ Prev", callback_data=cb(page - 1)))
+    if page + 1 < pages:
+        nav.append(btn("Next ➡️", callback_data=cb(page + 1)))
+    if nav:
+        rows.append(nav)
+
+
+def admin_services_view(context: ContextTypes.DEFAULT_TYPE, key: str, page: int,
+                        mode: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Step 2 of the admin range picker: the services (Facebook, WhatsApp, ...) of one server.
+    mode "n" = rename ranges, "p" = set range prices."""
     st = settings_of(context)
-    items = context.user_data["adm_rngs"][key]          # [(range, label)]
+    items = _svc_cache(context, key)
+    pages = max(1, -(-len(items) // NAME_PAGE))
+    page = max(0, min(page, pages - 1))
+    rows = [[btn(f"{service_emoji(sid)} {sid} ({len(rngs)})", callback_data=f"adm:{mode}sv:{key}:{page * NAME_PAGE + i}",
+                 style="primary")]
+            for i, (sid, rngs) in enumerate(items[page * NAME_PAGE:(page + 1) * NAME_PAGE])]
+    _nav(rows, page, pages, lambda pg: f"adm:{mode}sp:{key}:{pg}")
+    rows.append([btn("⬅️ Back", callback_data="adm:psel" if mode == "p" else "adm:name")])
+    lbl = dict(name_servers(context)).get(key, key)
+    head = "💰 <b>Range prices</b>" if mode == "p" else "🏷 <b>Range names</b>"
+    return (f"{head} · {html.escape(lbl)}\n\nSelect a service:", InlineKeyboardMarkup(rows))
+
+
+def name_ranges_view(context: ContextTypes.DEFAULT_TYPE, key: str, sv: int, page: int,
+                     mode: str = "n") -> tuple[str, InlineKeyboardMarkup]:
+    """Step 3: the ranges of one service. Tap one to rename it / set its price."""
+    st = settings_of(context)
+    sid, items = _svc_cache(context, key)[sv]
     pages = max(1, -(-len(items) // NAME_PAGE))
     page = max(0, min(page, pages - 1))
     chunk = items[page * NAME_PAGE:(page + 1) * NAME_PAGE]
+
     def label(r: str, lbl: str) -> str:
         shown = st.name_for(r) or lbl
         if mode == "p":
@@ -1477,24 +1510,18 @@ def name_ranges_view(context: ContextTypes.DEFAULT_TYPE, key: str, page: int,
         return f"🏷 {st.name_for(r)}" if st.has_custom_name(r) else f"📞 {lbl}"
 
     done = st.has_custom_price if mode == "p" else st.has_custom_name
-    rows = [[btn(label(r, lbl)[:60], callback_data=f"adm:{mode}rng:{key}:{page * NAME_PAGE + i}",
+    rows = [[btn(label(r, lbl)[:60], callback_data=f"adm:{mode}rng:{key}:{sv}:{page * NAME_PAGE + i}",
                  style=("primary" if done(r) else "success"))]
             for i, (r, lbl) in enumerate(chunk)]
-    nav = []
-    if page > 0:
-        nav.append(btn("⬅️ Prev", callback_data=f"adm:{mode}pg:{key}:{page - 1}"))
-    if page + 1 < pages:
-        nav.append(btn("Next ➡️", callback_data=f"adm:{mode}pg:{key}:{page + 1}"))
-    if nav:
-        rows.append(nav)
-    rows.append([btn("⬅️ Back", callback_data="adm:price" if mode == "p" else "adm:name")])
-    lbl = dict(name_servers(context)).get(key, key)
+    _nav(rows, page, pages, lambda pg: f"adm:{mode}pg:{key}:{sv}:{pg}")
+    rows.append([btn("⬅️ Back to services", callback_data=f"adm:{mode}sp:{key}:{sv // NAME_PAGE}")])
+    srv = dict(name_servers(context)).get(key, key)
     if mode == "p":
-        text = (f"💰 <b>Range prices</b> · {html.escape(lbl)}\n\n"
+        text = (f"💰 <b>Range prices</b> · {html.escape(srv)} · {service_emoji(sid)} {html.escape(sid)}\n\n"
                 f"{len(items)} ranges · page {page + 1}/{pages}\n"
                 f"💰 = has its own price (others pay {money(st.default_price)}). Tap a range to set its price 👇")
     else:
-        text = (f"🏷 <b>Range names</b> · {html.escape(lbl)}\n\n"
+        text = (f"🏷 <b>Range names</b> · {html.escape(srv)} · {service_emoji(sid)} {html.escape(sid)}\n\n"
                 f"{len(items)} ranges · page {page + 1}/{pages}\n"
                 "🏷 = already renamed. Tap a range to set its name 👇")
     return text, InlineKeyboardMarkup(rows)
@@ -1654,102 +1681,95 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         text, kb = name_home_view(context)
         await safe_edit(q, text, kb)
 
-    elif act in ("nsrv", "npg", "psrv", "ppg"):
-        mode = act[0]
+    elif act in ("nsrv", "psrv", "nsp", "psp", "nsv", "psv", "npg", "ppg"):
+        mode, step = act[0], act[1:]
         key = arg
         if key not in {k for k, _ in name_servers(context)}:
             text, kb = name_home_view(context)
             await safe_edit(q, text, kb)
             return
-        page = int(parts[3]) if act in ("npg", "ppg") and len(parts) > 3 and parts[3].isdigit() else 0
-        if act in ("nsrv", "psrv") or key not in context.user_data.get("adm_rngs", {}):
-            await safe_edit(q, "⏳ Loading ranges…")
+        num = lambda i: int(parts[i]) if len(parts) > i and parts[i].isdigit() else 0
+        if step == "srv" or key not in context.user_data.get("adm_svc", {}):
+            await safe_edit(q, "⏳ Loading services…")
             try:
                 services = await providers_of(app)[key].get_services()
             except ApiError as e:
                 await show_api_error(q, e, retry=f"adm:{mode}srv:{key}")
                 return
-            seen: dict[str, str] = {}
-            for svc in services:
-                for r, lbl in zip(svc.ranges, svc.labels or svc.ranges):
-                    seen.setdefault(range_key(r), f"{lbl} · {svc.sid}")
-            context.user_data.setdefault("adm_rngs", {})[key] = list(seen.items())
-        if not context.user_data["adm_rngs"][key]:
+            context.user_data.setdefault("adm_svc", {})[key] = [
+                (svc.sid, [(r, lbl) for r, lbl in zip(svc.ranges, svc.labels or svc.ranges)])
+                for svc in services if svc.ranges]
+        if not _svc_cache(context, key):
             await safe_edit(q, "📭 No ranges on this server right now.", adm_back("adm:price" if mode == "p" else "adm:name"))
             return
-        text, kb = name_ranges_view(context, key, page, mode)
+        if step in ("srv", "sp"):
+            text, kb = admin_services_view(context, key, num(3) if step == "sp" else 0, mode)
+        else:
+            sv = num(3)
+            if sv >= len(_svc_cache(context, key)):
+                text, kb = admin_services_view(context, key, 0, mode)
+            else:
+                text, kb = name_ranges_view(context, key, sv, num(4) if step == "pg" else 0, mode)
         await safe_edit(q, text, kb)
 
-    elif act == "nrng":
-        key, idx = arg, (int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else -1)
-        items = context.user_data.get("adm_rngs", {}).get(key) or []
-        if not (0 <= idx < len(items)):
-            text, kb = name_home_view(context, "⌛ That list is out of date, pick again.")
-            await safe_edit(q, text, kb)
+    elif act in ("nrng", "prng"):
+        mode = act[0]
+        key = arg
+        sv, idx = (int(parts[i]) if len(parts) > i and parts[i].isdigit() else -1 for i in (3, 4))
+        svcs = _svc_cache(context, key)
+        if not (0 <= sv < len(svcs) and 0 <= idx < len(svcs[sv][1])):
+            text, kb = name_home_view(context) if mode == "n" else price_servers_view(context)
+            await safe_edit(q, "⌛ That list is out of date, pick again.\n\n" + text, kb)
             return
-        rng = items[idx][0]
+        rng = svcs[sv][1][idx][0]
         page = idx // NAME_PAGE
         st = settings_of(context)
-        context.user_data["adm_name"] = {"range": rng, "key": key, "page": page}
-        cur = st.name_for(rng)
+        sel = {"range": rng, "key": key, "sv": sv, "page": page}
         rows = []
-        if cur:
-            rows.append([btn("🗑 Remove name", callback_data=f"adm:nrm:{key}:{idx}", style="danger")])
-        rows.append([btn("⬅️ Back", callback_data=f"adm:npg:{key}:{page}")])
-        await safe_edit(q, f"✏️ <b>Rename range</b> <code>{html.escape(rng)}</code>\n\n"
-                           f"Now: <b>{html.escape(cur) if cur else 'no custom name'}</b>\n\n"
-                           f"Send the new name as a message (max {MAX_NAME_LEN} characters).",
-                        InlineKeyboardMarkup(rows))
+        if mode == "n":
+            context.user_data["adm_name"] = sel
+            cur = st.name_for(rng)
+            if cur:
+                rows.append([btn("🗑 Remove name", callback_data=f"adm:nrm:{key}:{sv}:{idx}", style="danger")])
+            rows.append([btn("⬅️ Back", callback_data=f"adm:npg:{key}:{sv}:{page}")])
+            await safe_edit(q, f"✏️ <b>Rename range</b> <code>{html.escape(rng)}</code>\n\n"
+                               f"Now: <b>{html.escape(cur) if cur else 'no custom name'}</b>\n\n"
+                               f"Send the new name as a message (max {MAX_NAME_LEN} characters).",
+                            InlineKeyboardMarkup(rows))
+        else:
+            context.user_data["adm_price"] = sel
+            if st.has_custom_price(rng):
+                rows.append([btn("🗑 Remove custom price", callback_data=f"adm:prm:{key}:{sv}:{idx}", style="danger")])
+            rows.append([btn("⬅️ Back", callback_data=f"adm:ppg:{key}:{sv}:{page}")])
+            nm = st.name_for(rng)
+            await safe_edit(q, f"💰 <b>Price for range</b> <code>{html.escape(rng)}</code>"
+                               + (f" ({html.escape(nm)})" if nm else "") + "\n\n"
+                               f"Now: <b>{money(st.price_for(rng))}</b> per SMS"
+                               + ("" if st.has_custom_price(rng) else " (default)") + "\n\n"
+                               "Send the new reward in taka, e.g. <code>0.50</code> (0 = pays nothing).",
+                            InlineKeyboardMarkup(rows))
 
     elif act == "psel":
         text, kb = price_servers_view(context)
         await safe_edit(q, text, kb)
 
-    elif act == "prng":
-        key, idx = arg, (int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else -1)
-        items = context.user_data.get("adm_rngs", {}).get(key) or []
-        if not (0 <= idx < len(items)):
-            text, kb = price_servers_view(context)
-            await safe_edit(q, "⌛ That list is out of date, pick again.\n\n" + text, kb)
-            return
-        rng = items[idx][0]
-        page = idx // NAME_PAGE
-        st = settings_of(context)
-        context.user_data["adm_price"] = {"range": rng, "key": key, "page": page}
-        rows = []
-        if st.has_custom_price(rng):
-            rows.append([btn("🗑 Remove custom price", callback_data=f"adm:prm:{key}:{idx}", style="danger")])
-        rows.append([btn("⬅️ Back", callback_data=f"adm:ppg:{key}:{page}")])
-        nm = st.name_for(rng)
-        await safe_edit(q, f"💰 <b>Price for range</b> <code>{html.escape(rng)}</code>"
-                           + (f" ({html.escape(nm)})" if nm else "") + "\n\n"
-                           f"Now: <b>{money(st.price_for(rng))}</b> per SMS"
-                           + ("" if st.has_custom_price(rng) else " (default)") + "\n\n"
-                           "Send the new reward in taka, e.g. <code>0.50</code> (0 = pays nothing).",
-                        InlineKeyboardMarkup(rows))
-
-    elif act == "prm":
-        key, idx = arg, (int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else -1)
-        items = context.user_data.get("adm_rngs", {}).get(key) or []
-        if 0 <= idx < len(items):
-            settings_of(context).remove_range_price(items[idx][0])
-            context.user_data.pop("adm_price", None)
-            text, kb = name_ranges_view(context, key, idx // NAME_PAGE, "p")
-            await safe_edit(q, "🗑 Custom price removed.\n\n" + text, kb)
+    elif act in ("nrm", "prm"):
+        mode = act[0]
+        key = arg
+        sv, idx = (int(parts[i]) if len(parts) > i and parts[i].isdigit() else -1 for i in (3, 4))
+        svcs = _svc_cache(context, key)
+        if 0 <= sv < len(svcs) and 0 <= idx < len(svcs[sv][1]):
+            r = svcs[sv][1][idx][0]
+            if mode == "p":
+                settings_of(context).remove_range_price(r)
+                context.user_data.pop("adm_price", None)
+            else:
+                settings_of(context).remove_range_name(r)
+                context.user_data.pop("adm_name", None)
+            text, kb = name_ranges_view(context, key, sv, idx // NAME_PAGE, mode)
+            await safe_edit(q, ("🗑 Custom price removed.\n\n" if mode == "p" else "🗑 Name removed.\n\n") + text, kb)
         else:
-            text, kb = price_servers_view(context)
-            await safe_edit(q, text, kb)
-
-    elif act == "nrm":
-        key, idx = arg, (int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else -1)
-        items = context.user_data.get("adm_rngs", {}).get(key) or []
-        if 0 <= idx < len(items):
-            settings_of(context).remove_range_name(items[idx][0])
-            context.user_data.pop("adm_name", None)
-            text, kb = name_ranges_view(context, key, idx // NAME_PAGE)
-            await safe_edit(q, "🗑 Name removed.\n\n" + text, kb)
-        else:
-            text, kb = name_home_view(context)
+            text, kb = name_home_view(context) if mode == "n" else price_servers_view(context)
             await safe_edit(q, text, kb)
 
     elif act in ("nlist", "ndel"):
