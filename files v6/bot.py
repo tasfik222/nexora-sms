@@ -46,14 +46,16 @@ from telegram import InlineKeyboardButton as Btn
 from telegram import BotCommand, CopyTextButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram import KeyboardButton as KBtn
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, TelegramError
+from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -433,6 +435,84 @@ def fmt_time(ms: int) -> str:
 
 
 # ----------------------------------------------------------------------------
+# Stop / Start (maintenance mode)
+# ----------------------------------------------------------------------------
+MAINT_TEXT = (
+    "🛠 <b>BOT UPDATE IN PROGRESS</b>\n"
+    "▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
+    "✨ We are adding new features and improvements to make the bot even better for you.\n\n"
+    "⏳ <b>The bot will be back online in a few minutes.</b>\n\n"
+    "💰 Your balance and data are <b>100% safe</b>.\n"
+    "🔔 We will message you here the moment we are back.\n\n"
+    "🙏 Thank you for your patience!"
+)
+MAINT_ALERT = "🛠 Bot update in progress. We'll be back online in a few minutes!"
+BACK_TEXT = (
+    "✅ <b>BOT IS BACK ONLINE!</b>\n"
+    "▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
+    "🚀 The update is complete and the new features are live.\n\n"
+    "👇 Your menu is ready below - tap <b>Get Number</b> to continue."
+)
+
+
+def maintenance_on(app: Application) -> bool:
+    st = app.bot_data.get("settings")
+    return bool(st and st.maintenance)
+
+
+async def maintenance_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Runs before every handler. While the bot is stopped, normal users only get the update notice."""
+    if not maintenance_on(context.application):
+        return
+    user = update.effective_user
+    if user is None or is_admin(user.id):
+        return                                          # admins keep full access (to press Start, to test)
+    q = update.callback_query
+    if q is not None:
+        try:
+            await q.answer(MAINT_ALERT, show_alert=True)
+        except TelegramError:
+            pass
+    elif update.effective_message is not None and update.effective_chat and update.effective_chat.type == "private":
+        now = time.monotonic()
+        if now - context.user_data.get("maint_ts", 0) > 8:      # don't repeat the notice for every tap
+            context.user_data["maint_ts"] = now
+            try:
+                await update.effective_message.reply_text(MAINT_TEXT, parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+    raise ApplicationHandlerStop
+
+
+async def broadcast(app: Application, text: str, admin_chat: int, with_menu: bool = False) -> None:
+    """Sends `text` to every known user (not admins), slowly, then tells the admin how it went."""
+    sent = failed = 0
+    for uid in app.bot_data["store"].known_ids():
+        if uid in ADMIN_IDS:
+            continue
+        for _ in range(2):
+            try:
+                await app.bot.send_message(uid, text, parse_mode=ParseMode.HTML,
+                                           reply_markup=bottom_menu_kb(uid) if with_menu else None)
+                sent += 1
+                break
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after + 1)
+            except (Forbidden, BadRequest):
+                failed += 1                              # user blocked the bot / chat not found
+                break
+            except TelegramError:
+                failed += 1
+                break
+        await asyncio.sleep(0.05)                        # stay well under Telegram's 30 msg/sec limit
+    try:
+        await app.bot.send_message(admin_chat, f"📣 Notice delivered to <b>{sent}</b> users"
+                                   + (f" ({failed} could not be reached)." if failed else "."), parse_mode=ParseMode.HTML)
+    except TelegramError:
+        pass
+
+
+# ----------------------------------------------------------------------------
 # Menu handlers
 # ----------------------------------------------------------------------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -730,6 +810,8 @@ async def poll_for_sms(app: Application, uid: int) -> None:
             act = ACTIVATIONS.get(uid)
             if not act or act.done:
                 return
+            if maintenance_on(app) and uid not in ADMIN_IDS:
+                continue                                  # bot is stopped: SMS are delivered after it starts again
             pending = [sl for sl in act.slots
                        if not sl.done and NUMBER_OWNER.get(owner_key(act.provider, sl.no_plus)) == uid]
             if not pending:
@@ -1394,8 +1476,13 @@ def admin_home_view(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyb
             f"💰 Default reward: <b>{money(settings_of(context).default_price)}</b> · "
             f"custom ranges: <b>{len(settings_of(context).range_prices)}</b>\n"
             f"🏷 Named ranges: <b>{len(settings_of(context).range_names)}</b>\n\n"
-            f"{bm.status_line()}")
+            f"{bm.status_line()}\n\n"
+            + ("🔴 Bot status: <b>STOPPED</b> (users see the update notice)" if settings_of(context).maintenance
+               else "🟢 Bot status: <b>RUNNING</b>"))
+    on = not settings_of(context).maintenance
     kb = InlineKeyboardMarkup([
+        [btn("🛑 Stop" + (" ✅" if not on else ""), callback_data="adm:stop", style="danger" if on else "primary"),
+         btn("▶️ Start" + (" ✅" if on else ""), callback_data="adm:start", style="success" if not on else "primary")],
         [btn(f"📥 Pending ({ws[PENDING]['count']})", callback_data="adm:pend", style="danger")],
         [btn(f"🔢 Numbers per range ({settings_of(context).numbers_per_range})", callback_data="adm:num", style="success")],
         [btn("💰 Range prices", callback_data="adm:price", style="success"),
@@ -1785,6 +1872,35 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await safe_edit(q, f"📋 <b>Named ranges ({len(names)})</b>\n\n"
                            "Tap a range to remove its custom name:", InlineKeyboardMarkup(rows))
 
+    elif act == "stop":
+        if settings_of(context).maintenance:
+            await safe_edit(q, "🔴 The bot is already stopped.", adm_back("adm:home"))
+            return
+        await safe_edit(q, "🛑 <b>Stop the bot?</b>\n\n"
+                           "• Users get no replies; they only see the <i>update in progress</i> notice.\n"
+                           "• Every user receives that notice now.\n"
+                           "• You (admin) can still use the bot, and press ▶️ Start when you're done.\n"
+                           "• The stop survives a restart of the host.",
+                        InlineKeyboardMarkup([[btn("🛑 Yes, stop the bot", callback_data="adm:stopok", style="danger")],
+                                              [btn("⬅️ Cancel", callback_data="adm:home")]]))
+
+    elif act == "stopok":
+        if not settings_of(context).maintenance:
+            settings_of(context).set_maintenance(True)
+            app.create_task(broadcast(app, MAINT_TEXT, q.message.chat_id))
+        text, kb = admin_home_view(context)
+        await safe_edit(q, "🛑 <b>Bot stopped.</b> Sending the update notice to all users…\n\n" + text, kb)
+
+    elif act == "start":
+        if settings_of(context).maintenance:
+            settings_of(context).set_maintenance(False)
+            app.create_task(broadcast(app, BACK_TEXT, q.message.chat_id, with_menu=True))
+            note = "▶️ <b>Bot started.</b> Telling the users it is back online…"
+        else:
+            note = "🟢 The bot is already running."
+        text, kb = admin_home_view(context)
+        await safe_edit(q, note + "\n\n" + text, kb)
+
     elif act == "backup":
         await safe_edit(q, "⏳ Sending backup…")
         ok, msg = await app.bot_data["backup"].send_backup(force=True)
@@ -1870,6 +1986,8 @@ async def post_init(app: Application) -> None:
     log.info("Backups: %s%s", backups.mode, f" ({backups.startup_note})" if backups.startup_note else "")
     if not (backups.chat or ADMIN_IDS):
         log.warning("No BACKUP_CHAT_ID / ADMIN_IDS - data exists ONLY on this server's disk.")
+    if app.bot_data["settings"].maintenance:
+        log.warning("Bot is in STOPPED mode (maintenance) - users only see the update notice. Admin panel -> Start.")
     app.bot_data["migration"] = asyncio.create_task(app.bot_data["store"].migrate_all())
     app.bot_data["providers"] = build_providers()
     enabled_keys = [k for k, p in app.bot_data["providers"].items() if p.enabled]
@@ -1941,6 +2059,7 @@ def main() -> None:
     app = (ApplicationBuilder().token(token)
            .post_init(post_init).post_shutdown(post_shutdown).build())
 
+    app.add_handler(TypeHandler(Update, maintenance_gate), group=-1)     # Stop mode: blocks everyone except admins
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("balance", msg_balance))
     app.add_handler(CommandHandler("help", msg_help))
