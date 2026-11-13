@@ -1,0 +1,10 @@
+{
+  "numbers_per_range": 4,
+  "default_price": 30,
+  "range_prices": {
+    "25196": 50
+  },
+  "range_names": {
+    "22501": "Ivory Cost"
+  }
+}
