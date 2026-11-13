@@ -12,6 +12,9 @@ Environment variables:
     TELEGRAM_BOT_TOKEN          token from @BotFather
     VOLTXSMS_API_KEY            Voltx / 2oo9 key (header `mauthapi`)
     ZENEX_API_KEY               Zenex key (header `mapikey`)
+    REQUIRED_GROUP_ID           group users must join before using the bot (default -1003742768364; "off" = disabled).
+                                The bot must be an ADMIN of that group so it can check membership.
+    REQUIRED_GROUP_LINK         (optional) invite link for the Join button (otherwise the bot makes/reads one itself)
     CONSOLE_GROUP_LINK          (optional) link opened by the Console button (default https://t.me/nexoraconsole)
     CHANNEL_ID                  channel (-100... or @name) that receives every new SMS from both sites
                                 (bot must be channel admin) - see channel_feed.py
@@ -508,6 +511,135 @@ async def broadcast(app: Application, text: str, admin_chat: int, with_menu: boo
     try:
         await app.bot.send_message(admin_chat, f"📣 Notice delivered to <b>{sent}</b> users"
                                    + (f" ({failed} could not be reached)." if failed else "."), parse_mode=ParseMode.HTML)
+    except TelegramError:
+        pass
+
+
+# ----------------------------------------------------------------------------
+# Required group: users must join it before they can use the bot
+# ----------------------------------------------------------------------------
+_rg = (os.getenv("REQUIRED_GROUP_ID") or "-1003742768364").strip()
+REQUIRED_GROUP: int | str | None = None if _rg.lower() in ("", "0", "off", "none") else (
+    int(_rg) if _rg.lstrip("-").isdigit() else _rg)
+REQUIRED_GROUP_LINK = (os.getenv("REQUIRED_GROUP_LINK") or "").strip()      # optional invite link for the Join button
+JOIN_CACHE_SEC = 60                                                           # a verified member is not re-checked for 60 s
+
+JOIN_TEXT = (
+    "🔒 <b>JOIN REQUIRED</b>\n"
+    "▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
+    "To use this bot you must join our official group first.\n\n"
+    "1️⃣ Tap <b>Join Group</b>\n"
+    "2️⃣ Come back and tap <b>✅ I've Joined</b>\n\n"
+    "It takes just a few seconds 🚀"
+)
+
+
+async def required_group_link(app: Application) -> str:
+    """Invite link for the Join button: REQUIRED_GROUP_LINK, else @username / the group's own link, else a new one."""
+    if REQUIRED_GROUP_LINK:
+        return REQUIRED_GROUP_LINK
+    cached = app.bot_data.get("join_link")
+    if cached:
+        return cached
+    link = ""
+    try:
+        chat = await app.bot.get_chat(REQUIRED_GROUP)
+        link = f"https://t.me/{chat.username}" if getattr(chat, "username", None) else (chat.invite_link or "")
+        if not link:
+            link = await app.bot.export_chat_invite_link(REQUIRED_GROUP)
+    except TelegramError as e:
+        log.warning("Could not get an invite link for the required group: %s (set REQUIRED_GROUP_LINK)", e)
+    if link:
+        app.bot_data["join_link"] = link
+    return link
+
+
+async def is_group_member(app: Application, uid: int) -> Optional[bool]:
+    """True / False, or None when the check itself cannot work (e.g. the bot is not in the group)."""
+    cache = app.bot_data.setdefault("join_ok", {})
+    if time.monotonic() - cache.get(uid, float("-inf")) < JOIN_CACHE_SEC:
+        return True
+    try:
+        m = await app.bot.get_chat_member(REQUIRED_GROUP, uid)
+    except BadRequest as e:
+        if "user not found" in str(e).lower() or "participant_id_invalid" in str(e).lower():
+            return False
+        err = str(e)
+    except TelegramError as e:
+        err = str(e)
+    else:
+        ok = m.status in ("creator", "administrator", "member") or (m.status == "restricted" and getattr(m, "is_member", False))
+        if ok:
+            cache[uid] = time.monotonic()
+        return bool(ok)
+    log.error("Join check failed for the required group %s: %s", REQUIRED_GROUP, err)
+    if not app.bot_data.get("join_warned"):
+        app.bot_data["join_warned"] = True
+        for aid in ADMIN_IDS:
+            try:
+                await app.bot.send_message(
+                    aid, f"⚠️ <b>Join check is not working</b>\n\nMake the bot an <b>admin</b> of the required group "
+                         f"(<code>{REQUIRED_GROUP}</code>). Until then everyone is let in.\n\n<code>{html.escape(err[:150])}</code>",
+                    parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+    return None
+
+
+async def join_prompt(app: Application) -> tuple[str, InlineKeyboardMarkup]:
+    link = await required_group_link(app)
+    rows = ([[btn_url("📢 Join Group", link, "success")]] if link else [])
+    rows.append([btn("✅ I've Joined", callback_data="joincheck", style="primary")])
+    return JOIN_TEXT, InlineKeyboardMarkup(rows)
+
+
+async def join_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Runs before every handler: someone who is not in the required group only sees the join notice."""
+    if REQUIRED_GROUP is None:
+        return
+    user, q = update.effective_user, update.callback_query
+    if user is None or is_admin(user.id):
+        return
+    if q is None and not (update.effective_message and update.effective_chat and update.effective_chat.type == "private"):
+        return
+    app = context.application
+    if await is_group_member(app, user.id) is not False:      # member, or the check cannot work -> let through
+        return
+    if q is not None:
+        try:
+            await q.answer("❌ You have not joined the group yet." if q.data == "joincheck"
+                           else "🔒 Please join our group first!", show_alert=True)
+        except TelegramError:
+            pass
+        if q.data != "joincheck" and q.message is not None:
+            text, kb = await join_prompt(app)
+            try:
+                await q.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+    else:
+        now = time.monotonic()
+        if now - context.user_data.get("join_ts", 0) > 5:         # don't repeat the notice for every message
+            context.user_data["join_ts"] = now
+            text, kb = await join_prompt(app)
+            try:
+                await update.effective_message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+    raise ApplicationHandlerStop
+
+
+async def on_joincheck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """'I've Joined' pressed and the gate let it through = the user is in the group."""
+    q = update.callback_query
+    try:
+        await q.answer("✅ Verified! Welcome.")
+    except TelegramError:
+        pass
+    await cmd_start(update, context)
+    try:
+        if q.message is not None:
+            await q.message.delete()                         # remove the "join required" notice
     except TelegramError:
         pass
 
@@ -2059,7 +2191,8 @@ def main() -> None:
     app = (ApplicationBuilder().token(token)
            .post_init(post_init).post_shutdown(post_shutdown).build())
 
-    app.add_handler(TypeHandler(Update, maintenance_gate), group=-1)     # Stop mode: blocks everyone except admins
+    app.add_handler(TypeHandler(Update, maintenance_gate), group=-2)     # Stop mode: blocks everyone except admins
+    app.add_handler(TypeHandler(Update, join_gate), group=-1)            # must be in the required group
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("balance", msg_balance))
     app.add_handler(CommandHandler("help", msg_help))
@@ -2078,7 +2211,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text), group=1)
     app.add_handler(CommandHandler("console", msg_console))
     for handler, pattern in [
-        (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
+        (on_joincheck, r"^joincheck$"), (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
         (on_get_number, r"^get_number$"), (on_prov, r"^prov:[a-z0-9_]+$"), (on_back_services, r"^back_services$"),
         (on_svc_page, r"^svcpage:\d+$"), (on_svc, r"^svc:\d+$"),
         (on_rng_page, r"^rngpage:\d+$"), (on_rng, r"^rng:\d+$"),
