@@ -16,7 +16,9 @@ How it works (no GitHub, no extra service)
 
 Environment variables (all optional)
     BACKUP_CHAT_ID         private channel/group id (-100...), bot must be admin there
-    BACKUP_INTERVAL_MIN    max minutes between automatic backups when something changed (default 10)
+    BACKUP_AUTO            1 = also send a backup automatically every BACKUP_INTERVAL_MIN when something changed.
+                           Default 0: backups are sent ONLY when an admin presses "💾 Backup now".
+    BACKUP_INTERVAL_MIN    max minutes between automatic backups when BACKUP_AUTO=1 (default 10)
     LOCAL_DATA_DIR         default "data"  (local copies of the last 10 backups go to <dir>/backups/)
 """
 
@@ -122,6 +124,7 @@ class BackupManager:
         self.bot, self.users, self.wd, self.admin_ids = bot, users, wd, list(admin_ids)
         raw = (os.getenv("BACKUP_CHAT_ID") or "").strip()
         self.chat: int | str | None = (int(raw) if raw.lstrip("-").isdigit() else raw) or None
+        self.auto = (os.getenv("BACKUP_AUTO") or "0").strip().lower() in ("1", "true", "yes", "on")
         self.interval = max(60.0, float(os.getenv("BACKUP_INTERVAL_MIN", "10") or 10) * 60)
         self.dir = Path(os.getenv("LOCAL_DATA_DIR") or "data") / "backups"
         self.ready = not self.chat          # with a backup chat we first read its pinned backup
@@ -148,7 +151,8 @@ class BackupManager:
         last = (self.last_ok_at[:16].replace("T", " ") + " UTC") if self.last_ok_at else "not yet"
         pin = "" if self.pin_ok is None or not self.chat else (" · pinned ✅" if self.pin_ok else " · ⚠️ cannot pin")
         wait = "" if self.ready else " · ⏳ waiting for the backup chat"
-        return f"💾 Backup → {self.mode} · last: {last}{pin}{wait}"
+        manual = "" if self.auto else " · manual only"
+        return f"💾 Backup → {self.mode}{manual} · last: {last}{pin}{wait}"
 
     def request_soon(self) -> None:
         self.urgent = True
@@ -209,8 +213,8 @@ class BackupManager:
                 if not self.ready:
                     await self._try_startup()
                     continue
-                if not (self.chat or self.admin_ids) or self._signature() == self.last_sig:
-                    continue
+                if not self.auto or not (self.chat or self.admin_ids) or self._signature() == self.last_sig:
+                    continue                        # manual mode: only "💾 Backup now" sends a backup
                 age = time.monotonic() - self.last_sent
                 if age >= self.interval or (self.urgent and age >= 20):
                     await self.send_backup()
