@@ -270,14 +270,18 @@ class UserStore:
             rec["first_name"] = name
             self._save(uid)
 
-    def ranking(self) -> list[dict]:
-        """Today's leaderboard: everyone who received at least one OTP today, most first (ties: who joined first)."""
+    def ranking(self, period: str = "day") -> list[dict]:
+        """Leaderboard rows, most OTPs first (ties: who joined first).
+        period "day" = OTPs received today (resets at 12:00 AM), "all" = lifetime total."""
         today = today_str()
         rows = []
         for uid, rec in self.export_all().items():
-            day = rec.get("daily")
-            codes = int(day.get("codes", 0)) if isinstance(day, dict) and day.get("date") == today \
-                else _history_today(rec, today)
+            if period == "all":
+                codes = int(rec.get("total_codes", 0) or 0)
+            else:
+                day = rec.get("daily")
+                codes = int(day.get("codes", 0)) if isinstance(day, dict) and day.get("date") == today \
+                    else _history_today(rec, today)
             if codes > 0:
                 name = (rec.get("first_name") or "").strip() or (f"@{rec['username']}" if rec.get("username") else "")
                 rows.append({"uid": uid, "codes": codes, "name": name, "joined": rec.get("created_at", "")})
