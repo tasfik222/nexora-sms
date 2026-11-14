@@ -42,6 +42,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
 
@@ -74,7 +75,7 @@ from channel_feed import ChannelFeed, detect_service, mask_number
 from console_api import ConsoleClient, ConsoleEntry
 from otp_format import build_otp_message
 from storage import StorageError, UserStore
-from settings import DEFAULT_PRICE, MAX_NAME_LEN, MAX_NUMBERS, MAX_PRICE, SettingsStore, range_key
+from settings import DEFAULT_PRICE, MAX_ANNOUNCEMENT, MAX_NAME_LEN, MAX_NUMBERS, MAX_PRICE, SettingsStore, range_key
 from traffic import TopRange, TrafficTracker, resolve_listed_range
 from withdrawals import CANCELLED, PAID, PENDING, REJECTED, WithdrawError, WithdrawStore
 from backup import BackupError, BackupManager, read_backup, restore
@@ -642,6 +643,49 @@ async def on_joincheck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await q.message.delete()                         # remove the "join required" notice
     except TelegramError:
         pass
+
+
+# ----------------------------------------------------------------------------
+# Group announcement (Admin -> 📣 Announce)
+# ----------------------------------------------------------------------------
+ANNOUNCE_IMAGE = Path(__file__).with_name("announcement.png")      # banner posted with the announcement (optional)
+
+
+def announcement_text(bot_name: str) -> str:
+    """Caption of the announcement (must stay under Telegram's 1024-character photo-caption limit)."""
+    return (
+        f"🟣🔵🟢  <b>{html.escape(bot_name.upper())} IS NOW LIVE!</b>  🟢🔵🟣\n\n"
+        "💸 Get numbers, receive OTP codes in seconds and <b>earn money for every OTP!</b>\n\n"
+        "<blockquote>"
+        "📲 <b>Get Number</b> · fresh numbers from 2 servers\n"
+        "🔑 <b>Instant OTP</b> · the code arrives right in the bot\n"
+        "💵 <b>Earn per OTP</b> · reward added to your balance\n"
+        "📈 <b>Top Traffic</b> · see the best ranges live\n"
+        "🖥 <b>Consoles</b> · quick access to the site consoles\n"
+        "💸 <b>Withdraw</b> · cash out anytime"
+        "</blockquote>\n"
+        "🚀 <b>HOW TO START</b>\n"
+        "🟢 Tap <b>Start Bot</b> below\n"
+        "🔵 Get Number → pick a service &amp; range\n"
+        "🟣 Receive the OTP &amp; watch your balance grow 💰\n\n"
+        "🔔 <i>Stay in this group for updates, new ranges and better rates!</i>"
+    )
+
+
+async def announcement_view(app: Application) -> tuple[str, InlineKeyboardMarkup]:
+    me = await app.bot.get_me()
+    custom = app.bot_data["settings"].announcement
+    rows = [[btn_url("🚀 Start Bot", f"https://t.me/{me.username}?start=group", "success")],
+            [btn_url("💬 Support", SUPPORT_LINK, "primary"), btn_url("🖥 Console", CONSOLE_LINK, "danger")]]
+    return (custom or announcement_text(me.first_name or me.username or "Bot")), InlineKeyboardMarkup(rows)
+
+
+async def send_announcement(bot, chat_id, text: str, kb: InlineKeyboardMarkup):
+    """Banner photo + caption + buttons; plain text message if the banner file is missing."""
+    if ANNOUNCE_IMAGE.exists():
+        with ANNOUNCE_IMAGE.open("rb") as f:
+            return await bot.send_photo(chat_id, photo=f, caption=text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    return await bot.send_message(chat_id, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
 # ----------------------------------------------------------------------------
@@ -1530,6 +1574,24 @@ async def handle_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                          "Users see this name now.", reply_markup=back, parse_mode=ParseMode.HTML)
 
 
+async def handle_announcement_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """An admin sent the new announcement text (formatting is kept via text_html)."""
+    msg = update.effective_message
+    limit = 1024 if ANNOUNCE_IMAGE.exists() else 4000
+    plain = msg.text or ""
+    back = InlineKeyboardMarkup([[btn("⬅️ Back", callback_data="adm:ann")]])
+    if len(plain) > limit:
+        await msg.reply_text(f"⚠️ Too long: {len(plain)} characters, the max is {limit}. Shorten it and send again.",
+                             reply_markup=back)
+        return
+    settings_of(context).set_announcement(msg.text_html or plain)
+    context.user_data.pop("adm_ann", None)
+    await msg.reply_text("✅ <b>Announcement text saved.</b>\n\nPreview it, then post it to the group.",
+                         reply_markup=InlineKeyboardMarkup([[btn("👁 Preview & post", callback_data="adm:annpv", style="success")],
+                                                            [btn("⬅️ Back", callback_data="adm:ann")]]),
+                         parse_mode=ParseMode.HTML)
+
+
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Typed answers: the withdrawal form (steps 2 and 3) and an admin's rejection reason."""
     msg, user = update.effective_message, update.effective_user
@@ -1541,6 +1603,11 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("adm_reject", None)
         context.user_data.pop("adm_price", None)
         context.user_data.pop("adm_name", None)
+        context.user_data.pop("adm_ann", None)
+        return
+
+    if context.user_data.get("adm_ann") and is_admin(user.id):
+        await handle_announcement_input(update, context)
         return
 
     name_mode = context.user_data.get("adm_name")
@@ -1619,6 +1686,7 @@ def admin_home_view(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyb
         [btn(f"🔢 Numbers per range ({settings_of(context).numbers_per_range})", callback_data="adm:num", style="success")],
         [btn("💰 Range prices", callback_data="adm:price", style="success"),
          btn("🏷 Range names", callback_data="adm:name", style="success")],
+        [btn("📣 Announce", callback_data="adm:ann", style="primary")],
         [btn("✅ Paid", callback_data="adm:hist:paid", style="success"),
          btn("❌ Rejected", callback_data="adm:hist:rejected", style="primary")],
         [btn("💾 Backup now", callback_data="adm:backup", style="primary"),
@@ -1783,6 +1851,8 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("adm_price", None)
     if act != "nrng":
         context.user_data.pop("adm_name", None)
+    if act not in ("annedit", "anncur"):
+        context.user_data.pop("adm_ann", None)
 
     if act == "home":
         text, kb = admin_home_view(context)
@@ -2032,6 +2102,78 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             note = "🟢 The bot is already running."
         text, kb = admin_home_view(context)
         await safe_edit(q, note + "\n\n" + text, kb)
+
+    elif act == "ann":
+        if REQUIRED_GROUP is None:
+            await safe_edit(q, "⚠️ No group is set. Set REQUIRED_GROUP_ID first.", adm_back("adm:home"))
+            return
+        custom = bool(settings_of(context).announcement)
+        rows = [[btn("👁 Preview & post", callback_data="adm:annpv", style="success")],
+                [btn("✏️ Edit text", callback_data="adm:annedit", style="primary")]]
+        if custom:
+            rows.append([btn("♻️ Reset to default text", callback_data="adm:annrst", style="danger")])
+        rows.append([btn("⬅️ Back", callback_data="adm:home")])
+        await safe_edit(q, "📣 <b>Group announcement</b>\n\n"
+                           f"Text: <b>{'✏️ your custom text' if custom else 'default'}</b>\n"
+                           "The banner and the buttons (Start Bot · Support · Console) always stay the same - "
+                           "you only change the words.", InlineKeyboardMarkup(rows))
+
+    elif act == "annpv":
+        text, _ = await announcement_view(app)
+        await safe_edit(q, "📣 <b>Announcement</b>\n\nA preview is below 👇 - check it, then post it to your group.",
+                        adm_back("adm:ann"))
+        await send_announcement(app.bot, q.message.chat_id, text, InlineKeyboardMarkup([
+            [btn("📤 Post to group", callback_data="adm:annok", style="success"),
+             btn("📌 Post & pin", callback_data="adm:annpin", style="primary")],
+            [btn("✖ Cancel", callback_data="adm:anncancel", style="danger")]]))
+
+    elif act == "annedit":
+        context.user_data["adm_ann"] = True
+        limit = 1024 if ANNOUNCE_IMAGE.exists() else 4000
+        await safe_edit(q, "✏️ <b>Edit the announcement</b>\n\n"
+                           "Send the new text as <b>one message</b>. Bold, italic, quotes and links you add in Telegram "
+                           "are kept. The buttons stay as they are.\n\n"
+                           f"Max <b>{limit}</b> characters (the banner photo limits the caption).\n"
+                           "Tip: tap <b>Show current text</b>, copy it, change it and send it back.",
+                        InlineKeyboardMarkup([[btn("📋 Show current text", callback_data="adm:anncur", style="primary")],
+                                              [btn("⬅️ Back", callback_data="adm:ann")]]))
+
+    elif act == "anncur":
+        text, _ = await announcement_view(app)
+        await app.bot.send_message(q.message.chat_id, text, parse_mode=ParseMode.HTML)
+
+    elif act == "annrst":
+        settings_of(context).set_announcement("")
+        await safe_edit(q, "♻️ Back to the default text.", adm_back("adm:ann"))
+
+    elif act == "anncancel":
+        try:
+            await q.message.delete()                         # remove the preview
+        except TelegramError:
+            pass
+
+    elif act in ("annok", "annpin"):
+        text, kb = await announcement_view(app)
+        try:
+            sent = await send_announcement(app.bot, REQUIRED_GROUP, text, kb)
+        except TelegramError as e:
+            await app.bot.send_message(q.message.chat_id,
+                                       f"❌ Could not post in the group: <code>{html.escape(str(e)[:150])}</code>\n\n"
+                                       "Make sure the bot is an <b>admin</b> of the group and can post messages.",
+                                       parse_mode=ParseMode.HTML)
+            return
+        note = "✅ <b>Announcement posted in the group.</b>"
+        if act == "annpin":
+            try:
+                await app.bot.pin_chat_message(REQUIRED_GROUP, sent.message_id, disable_notification=False)
+                note += " 📌 Pinned."
+            except TelegramError:
+                note += "\n⚠️ Could not pin it (give the bot the 'Pin messages' right)."
+        try:
+            await q.message.delete()                         # remove the preview
+        except TelegramError:
+            pass
+        await app.bot.send_message(q.message.chat_id, note, parse_mode=ParseMode.HTML)
 
     elif act == "backup":
         await safe_edit(q, "⏳ Sending backup…")
