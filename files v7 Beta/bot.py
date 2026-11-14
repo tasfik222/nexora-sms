@@ -73,7 +73,7 @@ from api_client import (
 )
 from channel_feed import ChannelFeed, detect_service, mask_number
 from console_api import ConsoleClient, ConsoleEntry
-from otp_format import build_otp_message
+from otp_format import build_otp_message, now_text
 from storage import StorageError, UserStore
 from settings import DEFAULT_PRICE, MAX_ANNOUNCEMENT, MAX_NAME_LEN, MAX_NUMBERS, MAX_PRICE, SettingsStore, range_key
 from traffic import TopRange, TrafficTracker, resolve_listed_range
@@ -269,6 +269,7 @@ BTN_GET, BTN_BAL, BTN_HELP = "📲 Get Number", "💰 My Balance", "❓ Help"
 BTN_TOP = "🔥 Top Traffic"
 BTN_SUPPORT = "🆘 Support"
 BTN_GAME = "🎮 Game"
+BTN_LEADER = "🏆 Leaderboard"
 BTN_WITHDRAW, BTN_ADMIN = "💸 Withdraw", "👑 Admin"
 SUPPORT_LINK = (os.getenv("SUPPORT_LINK") or "https://t.me/ldrofbtw").strip()
 GAME_LINK = (os.getenv("GAME_BOT_LINK") or "https://t.me/enjoynexo_bot").strip()   # the 🎮 Game button opens this bot
@@ -296,6 +297,7 @@ def bottom_menu_kb(uid: int | None = None) -> ReplyKeyboardMarkup:
     rows.append([kbtn(BTN_BAL, "primary")] + ([kbtn(BTN_WITHDRAW, "success")] if FEATURES["withdraw"] else []))
     rows.append(([kbtn(BTN_CONSOLE, "success")] if console_buttons() else []) + [kbtn(BTN_HELP, "primary")]
                 + ([kbtn(BTN_ADMIN, "danger")] if is_admin(uid) and FEATURES["withdraw"] else []))
+    rows.append([kbtn(BTN_LEADER, "primary")])
     rows.append([kbtn(BTN_GAME, "success")])                      # one button across the whole bottom row
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True,
                                input_field_placeholder="Choose from the menu below 👇")
@@ -311,6 +313,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [btn(BTN_BAL, callback_data="balance", style="primary")]
         + ([btn(BTN_WITHDRAW, callback_data="withdraw", style="success")] if FEATURES["withdraw"] else []),
         [btn(BTN_HELP, callback_data="help", style="primary")],
+        [btn(BTN_LEADER, callback_data="leaderboard", style="primary")],
         [btn_url(BTN_SUPPORT, SUPPORT_LINK, "primary")],
         [btn_url(BTN_GAME, GAME_LINK, "success")],
     ])
@@ -647,6 +650,97 @@ async def on_joincheck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await q.message.delete()                         # remove the "join required" notice
     except TelegramError:
         pass
+
+
+# ----------------------------------------------------------------------------
+# Leaderboard: the 10 users who received the most OTPs
+# ----------------------------------------------------------------------------
+LEADER_IMAGE = Path(__file__).with_name("leaderboard.png")        # banner (optional)
+LEADER_CACHE_SEC = 30
+MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+
+async def get_ranking(app: Application) -> list[dict]:
+    """The full ranking, recomputed at most every LEADER_CACHE_SEC seconds (it reads every user file)."""
+    cached = app.bot_data.get("rank_cache")
+    if cached and time.monotonic() - cached[0] < LEADER_CACHE_SEC:
+        return cached[1]
+    rows = await asyncio.to_thread(app.bot_data["store"].ranking)
+    app.bot_data["rank_cache"] = (time.monotonic(), rows)
+    return rows
+
+
+def _otps(n: int) -> str:
+    return f"<b>{n:,}</b> OTP" + ("" if n == 1 else "s")
+
+
+def leaderboard_text(rows: list[dict], uid: int) -> str:
+    lines = ["🏆 <b>OTP LEADERBOARD</b> 🏆", "▬▬▬▬▬▬▬▬▬▬▬▬▬▬", "",
+             "👑 <i>Top 10 users with the most OTPs received</i>", ""]
+    if not rows:
+        lines.append("<blockquote>No OTPs yet - be the first one on the board! 🚀</blockquote>")
+    else:
+        board = []
+        for i, r in enumerate(rows[:10]):
+            nm = r["name"]
+            name = (html.escape(nm if len(nm) <= 18 else nm[:17] + "…") if nm else f"User ••{str(r['uid'])[-4:]}")
+            board.append(f"{MEDALS[i]} <b>{name}</b> · {_otps(r['codes'])}")
+        lines.append("<blockquote>" + "\n".join(board) + "</blockquote>")
+    lines.append("")
+    mine = next(((i, r) for i, r in enumerate(rows) if r["uid"] == uid), None)
+    if mine:
+        lines.append(f"📍 <b>Your rank:</b> #{mine[0] + 1} · {_otps(mine[1]['codes'])}")
+    else:
+        lines.append("📍 You have no OTPs yet - get a number and climb the board! 💪")
+    lines.append(f"🔄 <i>Updated {now_text()}</i>")
+    return "\n".join(lines)
+
+
+LEADER_KB = InlineKeyboardMarkup([[btn("🔄 Refresh", callback_data="lbr", style="primary")]])
+
+
+async def msg_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a fresh leaderboard (banner photo + embed-style caption)."""
+    chat, uid = update.effective_chat.id, update.effective_user.id
+    text = leaderboard_text(await get_ranking(context.application), uid)
+    if LEADER_IMAGE.exists():
+        with LEADER_IMAGE.open("rb") as f:
+            await context.bot.send_photo(chat, photo=f, caption=text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+    else:
+        await context.bot.send_message(chat, text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+
+
+async def on_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Menu button: open the leaderboard as a new message (the menu stays where it is)."""
+    await update.callback_query.answer()
+    await msg_leaderboard(update, context)
+
+
+async def on_leaderboard_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    app = context.application
+    app.bot_data.pop("rank_cache", None)                      # refresh = recompute now
+    text = leaderboard_text(await get_ranking(app), q.from_user.id)
+    try:
+        if q.message.photo:
+            await q.edit_message_caption(caption=text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+        else:
+            await q.edit_message_text(text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+        await q.answer("✅ Updated")
+    except BadRequest:                                         # "message is not modified"
+        await q.answer("✅ Already up to date")
+    except TelegramError:
+        await q.answer()
+
+
+async def remember_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Keeps each known user's first name up to date so the leaderboard can show it. Never blocks anything."""
+    u = update.effective_user
+    if u is not None and not u.is_bot:
+        try:
+            await context.application.bot_data["store"].set_name(u.id, u.first_name)
+        except Exception:
+            log.debug("remember_name failed", exc_info=True)
 
 
 # ----------------------------------------------------------------------------
@@ -1313,7 +1407,7 @@ def backup_soon(app: Application) -> None:
 
 
 def menu_labels() -> set[str]:
-    return {BTN_BAL, BTN_HELP, BTN_CONSOLE, BTN_TOP, BTN_SUPPORT, BTN_WITHDRAW, BTN_ADMIN, BTN_GAME} | {l for _, l in get_buttons()}
+    return {BTN_BAL, BTN_HELP, BTN_CONSOLE, BTN_TOP, BTN_SUPPORT, BTN_WITHDRAW, BTN_ADMIN, BTN_GAME, BTN_LEADER} | {l for _, l in get_buttons()}
 
 
 # ---- user side --------------------------------------------------------------
@@ -2344,6 +2438,7 @@ def main() -> None:
     app = (ApplicationBuilder().token(token)
            .post_init(post_init).post_shutdown(post_shutdown).build())
 
+    app.add_handler(TypeHandler(Update, remember_name), group=-3)        # stores first names for the leaderboard
     app.add_handler(TypeHandler(Update, maintenance_gate), group=-2)     # Stop mode: blocks everyone except admins
     app.add_handler(TypeHandler(Update, join_gate), group=-1)            # must be in the required group
     app.add_handler(CommandHandler("start", cmd_start))
@@ -2352,6 +2447,8 @@ def main() -> None:
     app.add_handler(CommandHandler("support", msg_support))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_SUPPORT}$"), msg_support))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_GAME}$"), msg_game))
+    app.add_handler(MessageHandler(filters.Regex(f"^{BTN_LEADER}$"), msg_leaderboard))
+    app.add_handler(CommandHandler("leaderboard", msg_leaderboard))
     app.add_handler(MessageHandler(filters.Regex(r"^📲 Get Number( \d)?$"), msg_get_number))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_BAL}$"), msg_balance))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_HELP}$"), msg_help))
@@ -2365,7 +2462,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text), group=1)
     app.add_handler(CommandHandler("console", msg_console))
     for handler, pattern in [
-        (on_joincheck, r"^joincheck$"), (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
+        (on_joincheck, r"^joincheck$"), (on_leaderboard, r"^leaderboard$"), (on_leaderboard_refresh, r"^lbr$"), (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
         (on_get_number, r"^get_number$"), (on_prov, r"^prov:[a-z0-9_]+$"), (on_back_services, r"^back_services$"),
         (on_svc_page, r"^svcpage:\d+$"), (on_svc, r"^svc:\d+$"),
         (on_rng_page, r"^rngpage:\d+$"), (on_rng, r"^rng:\d+$"),
