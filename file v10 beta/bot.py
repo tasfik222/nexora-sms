@@ -27,7 +27,7 @@ Environment variables:
 Flow:
     Get Number -> (choose server) -> choose service -> choose range -> number
                -> poll that server's OTP endpoint until a NEW OTP for that number appears
-               -> credit the user's balance.
+               -> credit the user's balance for EVERY new SMS on that number (watched for 20 minutes).
 Neither API has a release/cancel call, so "Change number" just abandons the current number
 and orders another one from the same range on the same server.
 """
@@ -144,7 +144,8 @@ class Slot:
     operator: str = ""
     seen_ids: set = field(default_factory=set)
     seen_ok: bool = False
-    done: bool = False
+    done: bool = False          # True once at least one SMS arrived (colour / label only - watching continues)
+    sms_count: int = 0         # how many SMS this number has received so far (each one is paid)
     message: str = ""
     code: Optional[str] = None
     credit_line: str = ""
@@ -163,11 +164,12 @@ class Activation:
     service: str = ""        # service the range was picked from (used for the button emoji)
     range_name: str = ""     # admin's custom name for this range (Admin -> 🏷 Range names), "" = none
     poll_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    closed: bool = False     # True when the 20-minute watch is over (or the order was closed)
 
     @property
     def done(self) -> bool:
-        """True when every number of this order has received its SMS."""
-        return bool(self.slots) and all(x.done for x in self.slots)
+        """True when the watch for this order is over. Numbers keep receiving SMS until then."""
+        return self.closed
 
 
 ACTIVATIONS: dict[int, Activation] = {}
@@ -380,15 +382,17 @@ def activation_text(act: Activation) -> str:
         line = f"{i}. <code>{html.escape(sl.phone)}</code>"
         if sl.done:
             line += f"  ✅ <code>{html.escape(sl.code)}</code>" if sl.code else "  ✅ SMS received"
+            if sl.sms_count > 1:
+                line += f" ({sl.sms_count} SMS)"
         lines.append(line)
     if len(act.slots) < act.requested:
         lines.append(f"\n<i>Only {len(act.slots)} of {act.requested} numbers were available.</i>")
     lines += ["", f"🪙 <b>Reward:</b> {money(act.price)} Per OTP!", ""]
+    got = sum(x.sms_count for x in act.slots)
     if act.done:
-        lines.append("✅ <i>All SMS received. Balance updated.</i>")
+        lines.append(f"⌛ <i>Watch finished. {got} SMS received, balance updated.</i>")
     else:
-        got = sum(1 for x in act.slots if x.done)
-        lines.append("⏳ <i>Waiting for incoming SMS...</i>" + (f" ({got}/{len(act.slots)} received)" if got else ""))
+        lines.append("⏳ <i>Waiting for incoming SMS...</i>" + (f" ({got} SMS received so far)" if got else ""))
     return "\n".join(lines)
 
 
@@ -396,7 +400,7 @@ HELP_TEXT = (
     "<b>How it works</b>\n\n"
     "1. Tap a <b>Get Number</b> button, then pick a service and a range.\n"
     "2. Use the number on the app you're verifying.\n"
-    "3. The bot checks for the SMS every 5 seconds for up to 20 minutes and sends it here automatically.\n"
+    "3. The bot checks for SMS every 5 seconds for up to 20 minutes. Every SMS on your number is sent here and paid, not just the first one.\n"
     "4. Tap <b>Change number</b> to get different number(s) from the same range.\n"
     "5. <b>🔥 Top Traffic</b> shows the 10 busiest ranges right now - tap one to get a number from it.\n"
     "6. Every SMS you receive adds the <b>Reward</b> shown for your range to your balance (see <b>My Balance</b>).\n"
@@ -1086,30 +1090,21 @@ async def order_number(q, context: ContextTypes.DEFAULT_TYPE, provider: str, rid
 # ----------------------------------------------------------------------------
 # SMS delivery: background polling + manual check
 # ----------------------------------------------------------------------------
-def find_new_otp(otps: list[Otp], act: Activation, slot: Slot) -> Optional[Otp]:
+def find_new_otps(otps: list[Otp], act: Activation, slot: Slot) -> list[Otp]:
+    """Every OTP for this number that has not been delivered yet, oldest first."""
     fresh = []
     for o in otps:
         if o.number != slot.no_plus:
             continue
-        if slot.seen_ok:
-            if o.otp_id in slot.seen_ids:
-                continue
-        elif o.time and o.time < act.order_ms - CLOCK_SKEW_MS:
+        if o.otp_id in slot.seen_ids:
+            continue
+        if not slot.seen_ok and o.time and o.time < act.order_ms - CLOCK_SKEW_MS:
             continue
         fresh.append(o)
-    return max(fresh, key=lambda o: o.time) if fresh else None
+    return sorted(fresh, key=lambda o: o.time)
 
 
-async def deliver_otp(app: Application, uid: int, slot: Slot, otp: Otp) -> None:
-    act = ACTIVATIONS.get(uid)
-    if not act or slot.done or slot not in act.slots:
-        return
-    if NUMBER_OWNER.get(owner_key(act.provider, slot.no_plus)) != uid:  # number now belongs to someone else
-        return
-    slot.done = True
-    slot.message = otp.message
-    slot.code = extract_code(otp.message)
-    new_balance = app.bot_data["store"].credit(uid, act.price, slot.phone, slot.code, f"{act.provider}:{otp.otp_id}")
+async def refresh_panel(app: Application, act: Activation) -> None:
     try:
         await app.bot.edit_message_text(
             activation_text(act), chat_id=act.chat_id, message_id=act.message_id,
@@ -1117,6 +1112,23 @@ async def deliver_otp(app: Application, uid: int, slot: Slot, otp: Otp) -> None:
         )
     except BadRequest as e:
         log.debug("Could not edit panel: %s", e)
+
+
+async def deliver_otp(app: Application, uid: int, slot: Slot, otp: Otp) -> None:
+    act = ACTIVATIONS.get(uid)
+    if not act or act.done or slot not in act.slots:
+        return
+    if NUMBER_OWNER.get(owner_key(act.provider, slot.no_plus)) != uid:  # number now belongs to someone else
+        return
+    if otp.otp_id in slot.seen_ids:                 # never pay the same SMS twice
+        return
+    slot.seen_ids.add(otp.otp_id)
+    slot.done = True
+    slot.sms_count += 1
+    slot.message = otp.message
+    slot.code = extract_code(otp.message)
+    new_balance = app.bot_data["store"].credit(uid, act.price, slot.phone, slot.code, f"{act.provider}:{otp.otp_id}")
+    await refresh_panel(app, act)
     svc_emoji, guess = detect_service(act.service, otp.message)
     svc_name = (act.service.title() if act.service.isupper() else act.service) if act.service else guess
     if act.service:
@@ -1140,7 +1152,7 @@ async def poll_for_sms(app: Application, uid: int) -> None:
             if maintenance_on(app) and uid not in ADMIN_IDS:
                 continue                                  # bot is stopped: SMS are delivered after it starts again
             pending = [sl for sl in act.slots
-                       if not sl.done and NUMBER_OWNER.get(owner_key(act.provider, sl.no_plus)) == uid]
+                       if NUMBER_OWNER.get(owner_key(act.provider, sl.no_plus)) == uid]
             if not pending:
                 return
             try:
@@ -1153,19 +1165,20 @@ async def poll_for_sms(app: Application, uid: int) -> None:
                 log.warning("Poll error (will retry): %s", e)
                 continue
             for sl in pending:
-                otp = find_new_otp(otps, act, sl)
-                if otp:
+                for otp in find_new_otps(otps, act, sl):    # every new SMS on this number, not just one
                     await deliver_otp(app, uid, sl, otp)
             if ACTIVATIONS.get(uid) is not act:      # replaced by a newer order meanwhile
-                return
-            if act.done:
                 return
 
         act = ACTIVATIONS.get(uid)
         if act and not act.done:
+            act.closed = True                        # the 20-minute watch is over
+            got = sum(x.sms_count for x in act.slots)
+            await refresh_panel(app, act)
             await app.bot.send_message(
                 act.chat_id,
-                "⌛ No SMS after 20 minutes. Tap <b>Change number</b> to get new number(s).",
+                ("⌛ No SMS after 20 minutes. Tap <b>Change number</b> to get new number(s)." if got == 0
+                 else f"⌛ 20-minute watch finished: {got} SMS received in total. Tap <b>Change number</b> for new number(s)."),
                 reply_markup=activation_kb(act),
                 parse_mode=ParseMode.HTML,
             )
