@@ -660,13 +660,15 @@ LEADER_CACHE_SEC = 30
 MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
 
-async def get_ranking(app: Application) -> list[dict]:
-    """The full ranking, recomputed at most every LEADER_CACHE_SEC seconds (it reads every user file)."""
-    cached = app.bot_data.get("rank_cache")
-    if cached and time.monotonic() - cached[0] < LEADER_CACHE_SEC:
-        return cached[1]
-    rows = await asyncio.to_thread(app.bot_data["store"].ranking)
-    app.bot_data["rank_cache"] = (time.monotonic(), rows)
+async def get_ranking(app: Application, period: str = "day") -> list[dict]:
+    """The full ranking ("day" = today, "all" = lifetime), recomputed at most every LEADER_CACHE_SEC seconds
+    (it reads every user file)."""
+    cache = app.bot_data.setdefault("rank_cache", {})
+    hit = cache.get(period)
+    if hit and time.monotonic() - hit[0] < LEADER_CACHE_SEC:
+        return hit[1]
+    rows = await asyncio.to_thread(app.bot_data["store"].ranking, period)
+    cache[period] = (time.monotonic(), rows)
     return rows
 
 
@@ -674,11 +676,14 @@ def _otps(n: int) -> str:
     return f"<b>{n:,}</b> OTP" + ("" if n == 1 else "s")
 
 
-def leaderboard_text(rows: list[dict], uid: int) -> str:
+def leaderboard_text(rows: list[dict], uid: int, period: str = "day") -> str:
+    daily = period != "all"
     lines = ["🏆 <b>OTP LEADERBOARD</b> 🏆", "▬▬▬▬▬▬▬▬▬▬▬▬▬▬", "",
-             "👑 <i>Today's top 10 users with the most OTPs</i>", ""]
+             ("📅 <b>TODAY</b> · <i>top 10 users with the most OTPs</i>" if daily
+              else "🌟 <b>LIFETIME</b> · <i>top 10 users with the most OTPs of all time</i>"), ""]
     if not rows:
-        lines.append("<blockquote>No OTPs today yet - be the first one on the board! 🚀</blockquote>")
+        lines.append("<blockquote>" + ("No OTPs today yet - be the first one on the board! 🚀" if daily
+                                       else "No OTPs yet - be the first one on the board! 🚀") + "</blockquote>")
     else:
         board = []
         for i, r in enumerate(rows[:10]):
@@ -691,25 +696,33 @@ def leaderboard_text(rows: list[dict], uid: int) -> str:
     if mine:
         lines.append(f"📍 <b>Your rank:</b> #{mine[0] + 1} · {_otps(mine[1]['codes'])}")
     else:
-        lines.append("📍 You have no OTPs today yet - get a number and climb the board! 💪")
-    left = seconds_to_reset()
-    lines.append(f"🕛 <i>Resets every night at 12:00 AM · in {left // 3600}h {left % 3600 // 60}m</i>")
+        lines.append("📍 You have no OTPs today yet - get a number and climb the board! 💪" if daily
+                     else "📍 You have no OTPs yet - get a number and climb the board! 💪")
+    if daily:
+        left = seconds_to_reset()
+        lines.append(f"🕛 <i>Resets every night at 12:00 AM · in {left // 3600}h {left % 3600 // 60}m</i>")
     lines.append(f"🔄 <i>Updated {now_text()}</i>")
     return "\n".join(lines)
 
 
-LEADER_KB = InlineKeyboardMarkup([[btn("🔄 Refresh", callback_data="lbr", style="primary")]])
+def leader_kb(period: str = "day") -> InlineKeyboardMarkup:
+    daily = period != "all"
+    return InlineKeyboardMarkup([
+        [btn("📅 Today" + (" ✅" if daily else ""), callback_data="lbp:day", style="success" if daily else "primary"),
+         btn("🌟 Lifetime" + ("" if daily else " ✅"), callback_data="lbp:all", style="primary" if daily else "success")],
+        [btn("🔄 Refresh", callback_data=f"lbr:{'day' if daily else 'all'}", style="primary")],
+    ])
 
 
 async def msg_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a fresh leaderboard (banner photo + embed-style caption)."""
+    """Send a fresh leaderboard (banner photo + embed-style caption). Starts on today's board."""
     chat, uid = update.effective_chat.id, update.effective_user.id
-    text = leaderboard_text(await get_ranking(context.application), uid)
+    text = leaderboard_text(await get_ranking(context.application, "day"), uid, "day")
     if LEADER_IMAGE.exists():
         with LEADER_IMAGE.open("rb") as f:
-            await context.bot.send_photo(chat, photo=f, caption=text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+            await context.bot.send_photo(chat, photo=f, caption=text, reply_markup=leader_kb("day"), parse_mode=ParseMode.HTML)
     else:
-        await context.bot.send_message(chat, text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat, text, reply_markup=leader_kb("day"), parse_mode=ParseMode.HTML)
 
 
 async def on_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -718,17 +731,21 @@ async def on_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await msg_leaderboard(update, context)
 
 
-async def on_leaderboard_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def on_leaderboard_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Today / Lifetime tabs and the Refresh button: edit the same message in place."""
     q = update.callback_query
+    kind, _, period = (q.data or "").partition(":")            # "lbp:all" (switch) / "lbr:day" (refresh)
+    period = period if period in ("day", "all") else "day"
     app = context.application
-    app.bot_data.pop("rank_cache", None)                      # refresh = recompute now
-    text = leaderboard_text(await get_ranking(app), q.from_user.id)
+    if kind == "lbr":
+        app.bot_data.get("rank_cache", {}).pop(period, None)  # refresh = recompute now
+    text = leaderboard_text(await get_ranking(app, period), q.from_user.id, period)
     try:
         if q.message.photo:
-            await q.edit_message_caption(caption=text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
+            await q.edit_message_caption(caption=text, reply_markup=leader_kb(period), parse_mode=ParseMode.HTML)
         else:
-            await q.edit_message_text(text, reply_markup=LEADER_KB, parse_mode=ParseMode.HTML)
-        await q.answer("✅ Updated")
+            await q.edit_message_text(text, reply_markup=leader_kb(period), parse_mode=ParseMode.HTML)
+        await q.answer("✅ Updated" if kind == "lbr" else None)
     except BadRequest:                                         # "message is not modified"
         await q.answer("✅ Already up to date")
     except TelegramError:
@@ -2464,7 +2481,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text), group=1)
     app.add_handler(CommandHandler("console", msg_console))
     for handler, pattern in [
-        (on_joincheck, r"^joincheck$"), (on_leaderboard, r"^leaderboard$"), (on_leaderboard_refresh, r"^lbr$"), (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
+        (on_joincheck, r"^joincheck$"), (on_leaderboard, r"^leaderboard$"), (on_leaderboard_switch, r"^lb[pr](:(day|all))?$"), (on_menu, r"^menu$"), (on_help, r"^help$"), (on_balance, r"^balance$"),
         (on_get_number, r"^get_number$"), (on_prov, r"^prov:[a-z0-9_]+$"), (on_back_services, r"^back_services$"),
         (on_svc_page, r"^svcpage:\d+$"), (on_svc, r"^svc:\d+$"),
         (on_rng_page, r"^rngpage:\d+$"), (on_rng, r"^rng:\d+$"),
