@@ -6,6 +6,11 @@ Where the data lives
 
 Environment variables (all optional)
     LOCAL_DATA_DIR    default "data"
+    LEADERBOARD_TIMEZONE   day boundary of the daily leaderboard (default OTP_TIMEZONE, else "Asia/Dhaka")
+
+Daily counter (leaderboard): each record has "daily": {"date": "YYYY-MM-DD", "codes": N} = OTPs received
+on that day. The day changes at 12:00 AM in LEADERBOARD_TIMEZONE (default OTP_TIMEZONE, else Asia/Dhaka), so the
+leaderboard "resets" every night by itself.
 
 Money: `balance` and history `amount` are whole PAISA (100 paisa = 1 taka); the files also carry
 readable `balance_taka` / `amount_taka` fields. Old records are upgraded automatically at startup.
@@ -24,7 +29,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +39,49 @@ log = logging.getLogger("voltx.store")
 
 HISTORY_LIMIT = 50     # earnings entries kept per user
 ID_LIMIT = 200         # credited OTP ids remembered per user (duplicate protection)
+
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
+
+_TZ = None
+
+
+def _tz():
+    """Timezone of the daily reset. Falls back to a fixed UTC+6 (Bangladesh has no DST) if tz data is missing."""
+    global _TZ
+    if _TZ is None:
+        name = os.getenv("LEADERBOARD_TIMEZONE") or os.getenv("OTP_TIMEZONE") or "Asia/Dhaka"
+        try:
+            _TZ = ZoneInfo(name)
+        except Exception:
+            _TZ = timezone(timedelta(hours=6))
+    return _TZ
+
+
+def today_str() -> str:
+    return datetime.now(_tz()).date().isoformat()
+
+
+def seconds_to_reset() -> int:
+    """Seconds until the next 12:00 AM (when the daily leaderboard starts again)."""
+    now = datetime.now(_tz())
+    nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, int((nxt - now).total_seconds()))
+
+
+def _history_today(rec: dict, today: str) -> int:
+    """OTPs credited today according to the (last 50) history entries - used when no daily counter exists yet."""
+    n = 0
+    for h in rec.get("history", []):
+        try:
+            if datetime.fromisoformat(h["time"]).astimezone(_tz()).date().isoformat() == today:
+                n += 1
+        except (KeyError, ValueError, TypeError):
+            continue
+    return n
 
 
 def _now() -> str:
@@ -153,6 +201,11 @@ class UserStore:
             return None
         rec["balance"] += amount
         rec["total_codes"] += 1
+        today = today_str()
+        day = rec.get("daily")
+        if not isinstance(day, dict) or day.get("date") != today:     # a new day (or first time): start today's count
+            rec["daily"] = day = {"date": today, "codes": _history_today(rec, today)}
+        day["codes"] = int(day.get("codes", 0)) + 1
         rec["history"].append({"time": _now(), "number": number, "code": code, "amount": amount, "otp_id": otp_id})
         rec["history"] = rec["history"][-HISTORY_LIMIT:]
         if otp_id:
@@ -218,10 +271,13 @@ class UserStore:
             self._save(uid)
 
     def ranking(self) -> list[dict]:
-        """Everyone who has received at least one OTP, most OTPs first (ties: who joined first)."""
+        """Today's leaderboard: everyone who received at least one OTP today, most first (ties: who joined first)."""
+        today = today_str()
         rows = []
         for uid, rec in self.export_all().items():
-            codes = int(rec.get("total_codes", 0) or 0)
+            day = rec.get("daily")
+            codes = int(day.get("codes", 0)) if isinstance(day, dict) and day.get("date") == today \
+                else _history_today(rec, today)
             if codes > 0:
                 name = (rec.get("first_name") or "").strip() or (f"@{rec['username']}" if rec.get("username") else "")
                 rows.append({"uid": uid, "codes": codes, "name": name, "joined": rec.get("created_at", "")})
