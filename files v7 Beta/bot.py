@@ -74,7 +74,7 @@ from api_client import (
 from channel_feed import ChannelFeed, detect_service, mask_number
 from console_api import ConsoleClient, ConsoleEntry
 from otp_format import build_otp_message, now_text
-from storage import StorageError, UserStore
+from storage import StorageError, UserStore, seconds_to_reset
 from settings import DEFAULT_PRICE, MAX_ANNOUNCEMENT, MAX_NAME_LEN, MAX_NUMBERS, MAX_PRICE, SettingsStore, range_key
 from traffic import TopRange, TrafficTracker, resolve_listed_range
 from withdrawals import CANCELLED, PAID, PENDING, REJECTED, WithdrawError, WithdrawStore
@@ -653,7 +653,7 @@ async def on_joincheck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 # ----------------------------------------------------------------------------
-# Leaderboard: the 10 users who received the most OTPs
+# Leaderboard: the 10 users who received the most OTPs today (resets at 12:00 AM)
 # ----------------------------------------------------------------------------
 LEADER_IMAGE = Path(__file__).with_name("leaderboard.png")        # banner (optional)
 LEADER_CACHE_SEC = 30
@@ -676,9 +676,9 @@ def _otps(n: int) -> str:
 
 def leaderboard_text(rows: list[dict], uid: int) -> str:
     lines = ["🏆 <b>OTP LEADERBOARD</b> 🏆", "▬▬▬▬▬▬▬▬▬▬▬▬▬▬", "",
-             "👑 <i>Top 10 users with the most OTPs received</i>", ""]
+             "👑 <i>Today's top 10 users with the most OTPs</i>", ""]
     if not rows:
-        lines.append("<blockquote>No OTPs yet - be the first one on the board! 🚀</blockquote>")
+        lines.append("<blockquote>No OTPs today yet - be the first one on the board! 🚀</blockquote>")
     else:
         board = []
         for i, r in enumerate(rows[:10]):
@@ -691,7 +691,9 @@ def leaderboard_text(rows: list[dict], uid: int) -> str:
     if mine:
         lines.append(f"📍 <b>Your rank:</b> #{mine[0] + 1} · {_otps(mine[1]['codes'])}")
     else:
-        lines.append("📍 You have no OTPs yet - get a number and climb the board! 💪")
+        lines.append("📍 You have no OTPs today yet - get a number and climb the board! 💪")
+    left = seconds_to_reset()
+    lines.append(f"🕛 <i>Resets every night at 12:00 AM · in {left // 3600}h {left % 3600 // 60}m</i>")
     lines.append(f"🔄 <i>Updated {now_text()}</i>")
     return "\n".join(lines)
 
