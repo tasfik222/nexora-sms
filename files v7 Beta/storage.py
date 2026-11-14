@@ -201,6 +201,33 @@ class UserStore:
                 out[uid] = rec
         return out
 
+    async def set_name(self, uid: int, name: str | None) -> None:
+        """Remember the user's Telegram first name (shown on the leaderboard). Never creates a new user."""
+        name = (name or "").strip()[:64]
+        if not name:
+            return
+        if uid not in self._cache:
+            try:
+                if self._read_local(uid) is None:
+                    return
+            except StorageError:
+                return
+        rec = await self.get(uid)
+        if rec.get("first_name") != name:
+            rec["first_name"] = name
+            self._save(uid)
+
+    def ranking(self) -> list[dict]:
+        """Everyone who has received at least one OTP, most OTPs first (ties: who joined first)."""
+        rows = []
+        for uid, rec in self.export_all().items():
+            codes = int(rec.get("total_codes", 0) or 0)
+            if codes > 0:
+                name = (rec.get("first_name") or "").strip() or (f"@{rec['username']}" if rec.get("username") else "")
+                rows.append({"uid": uid, "codes": codes, "name": name, "joined": rec.get("created_at", "")})
+        rows.sort(key=lambda r: (-r["codes"], r["joined"], r["uid"]))
+        return rows
+
     def stats(self) -> dict:
         recs = self.export_all().values()
         return {"users": len(recs), "balance": sum(int(r.get("balance", 0)) for r in recs),
