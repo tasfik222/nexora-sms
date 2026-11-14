@@ -496,6 +496,38 @@ async def maintenance_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     raise ApplicationHandlerStop
 
 
+BANNED_TEXT = (
+    "🚫 <b>You are banned</b>\n\n"
+    "You can no longer use this bot. If you think this is a mistake, please contact support."
+)
+
+
+async def ban_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Runs before every other handler. A banned user cannot use the bot at all (admins are never blocked)."""
+    user = update.effective_user
+    if user is None or is_admin(user.id):
+        return
+    store = context.application.bot_data.get("store")
+    if store is None or not store.is_banned(user.id):
+        return
+    q = update.callback_query
+    if q is not None:
+        try:
+            await q.answer("🚫 You are banned.", show_alert=True)
+        except TelegramError:
+            pass
+    elif update.effective_message is not None and update.effective_chat and update.effective_chat.type == "private":
+        now = time.monotonic()
+        data = context.user_data
+        if data is not None and now - data.get("ban_ts", 0) > 8:      # don't repeat the notice for every tap
+            data["ban_ts"] = now
+            try:
+                await update.effective_message.reply_text(BANNED_TEXT, parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+    raise ApplicationHandlerStop
+
+
 async def broadcast(app: Application, text: str, admin_chat: int, with_menu: bool = False) -> None:
     """Sends `text` to every known user (not admins), slowly, then tells the admin how it went."""
     sent = failed = 0
@@ -1815,6 +1847,7 @@ def admin_home_view(context: ContextTypes.DEFAULT_TYPE) -> tuple[str, InlineKeyb
         [btn("💰 Range prices", callback_data="adm:price", style="success"),
          btn("🏷 Range names", callback_data="adm:name", style="success")],
         [btn("📣 Announce", callback_data="adm:ann", style="primary")],
+        [btn(f"👥 Users ({us['users']})", callback_data="adm:users:b:0", style="primary")],
         [btn("✅ Paid", callback_data="adm:hist:paid", style="success"),
          btn("❌ Rejected", callback_data="adm:hist:rejected", style="primary")],
         [btn("💾 Backup now", callback_data="adm:backup", style="primary"),
@@ -1940,6 +1973,94 @@ def name_ranges_view(context: ContextTypes.DEFAULT_TYPE, key: str, sv: int, page
                 f"{len(items)} ranges · page {page + 1}/{pages}\n"
                 "🏷 = already renamed. Tap a range to set its name 👇")
     return text, InlineKeyboardMarkup(rows)
+
+
+USERS_PER_PAGE = 10
+
+
+def user_label(rec: dict) -> str:
+    name = (rec.get("first_name") or "").strip()
+    if not name and rec.get("username"):
+        name = "@" + rec["username"]
+    return name or str(rec.get("user_id", "?"))
+
+
+def users_view(context: ContextTypes.DEFAULT_TYPE, sort: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Paged list of every bot user (sort: 'b' = biggest balance first, 'n' = newest first)."""
+    store = store_of(context)
+    recs = list(store.export_all().values())
+    if sort == "n":
+        recs.sort(key=lambda r: (r.get("created_at", ""), int(r.get("user_id", 0))), reverse=True)
+    else:
+        sort = "b"
+        recs.sort(key=lambda r: (-int(r.get("balance", 0)), int(r.get("user_id", 0))))
+    pages = max(1, -(-len(recs) // USERS_PER_PAGE))
+    page = min(max(page, 0), pages - 1)
+    chunk = recs[page * USERS_PER_PAGE:(page + 1) * USERS_PER_PAGE]
+    total_bal = sum(int(r.get("balance", 0)) for r in recs)
+    banned = sum(1 for r in recs if store.is_banned(int(r["user_id"])))
+    text = ("👥 <b>Users</b>\n\n"
+            f"Total: <b>{len(recs)}</b> · 🚫 Banned: <b>{banned}</b>\n"
+            f"💰 All balances: <b>{money(total_bal)}</b>\n"
+            f"Sorted by: <b>{'💰 balance (highest first)' if sort == 'b' else '🆕 newest first'}</b>\n\n"
+            "Tap a user to see details or ban / unban.")
+    rows = []
+    for r in chunk:
+        uid = int(r["user_id"])
+        mark = "🚫 " if store.is_banned(uid) else ""
+        rows.append([btn(f"{mark}{user_label(r)} · {money(int(r.get('balance', 0)))} · {uid}"[:60],
+                         callback_data=f"adm:usr:{uid}:{sort}:{page}")])
+    nav = []
+    if page > 0:
+        nav.append(btn("⬅️ Prev", callback_data=f"adm:users:{sort}:{page - 1}"))
+    nav.append(btn(f"{page + 1}/{pages}", callback_data=f"adm:users:{sort}:{page}"))
+    if page < pages - 1:
+        nav.append(btn("Next ➡️", callback_data=f"adm:users:{sort}:{page + 1}"))
+    rows.append(nav)
+    other = "n" if sort == "b" else "b"
+    rows.append([btn("🆕 Sort: newest" if sort == "b" else "💰 Sort: balance", callback_data=f"adm:users:{other}:0")])
+    rows.append([btn("⬅️ Back", callback_data="adm:home")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+def user_detail_view(context: ContextTypes.DEFAULT_TYPE, uid: int, sort: str = "b",
+                     page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    store = store_of(context)
+    rec = store.peek(uid)
+    back = btn("⬅️ Back to users", callback_data=f"adm:users:{sort}:{page}")
+    if rec is None:
+        return f"❌ User <code>{uid}</code> not found.", InlineKeyboardMarkup([[back]])
+    banned = store.is_banned(uid)
+    uname = f" (@{html.escape(rec['username'])})" if rec.get("username") else ""
+    text = (f"👤 <b>{html.escape(user_label(rec))}</b>{uname}\n"
+            f"🆔 <code>{uid}</code>\n\n"
+            f"💰 Balance: <b>{money(int(rec.get('balance', 0)))}</b>\n"
+            f"📨 SMS codes received: <b>{int(rec.get('total_codes', 0) or 0)}</b>\n"
+            f"📅 Joined: {fmt_utc(rec.get('created_at'))}\n\n"
+            + (f"🚫 Status: <b>BANNED</b> (since {fmt_utc(rec.get('banned_at'))})" if banned
+               else "✅ Status: <b>Active</b>"))
+    if is_admin(uid):
+        action = []
+        text += "\n\n👑 This user is an admin and cannot be banned."
+    elif banned:
+        action = [btn("✅ Unban", callback_data=f"adm:unban:{uid}:{sort}:{page}", style="success")]
+    else:
+        action = [btn("🚫 Ban", callback_data=f"adm:ban:{uid}:{sort}:{page}", style="danger")]
+    rows = ([action] if action else []) + [[btn("🔄 Refresh", callback_data=f"adm:usr:{uid}:{sort}:{page}")], [back]]
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def cmd_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/user <telegram id> - admin shortcut to open one user's details (balance, ban / unban)."""
+    if not is_admin(update.effective_user.id):
+        await update.effective_message.reply_text("⛔ Admins only.")
+        return
+    arg = (context.args[0] if context.args else "").strip()
+    if not arg.isdigit():
+        await update.effective_message.reply_text("Usage: <code>/user 123456789</code>", parse_mode=ParseMode.HTML)
+        return
+    text, kb = user_detail_view(context, int(arg))
+    await update.effective_message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2303,6 +2424,41 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             pass
         await app.bot.send_message(q.message.chat_id, note, parse_mode=ParseMode.HTML)
 
+    elif act == "users":
+        sort = parts[2] if len(parts) > 2 and parts[2] in ("b", "n") else "b"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        text, kb = users_view(context, sort, page)
+        await safe_edit(q, text, kb)
+
+    elif act in ("usr", "ban", "unban"):
+        if not arg.lstrip("-").isdigit():
+            await safe_edit(q, "User not found.", adm_back("adm:users:b:0", "⬅️ Back to users"))
+            return
+        target = int(arg)
+        sort = parts[3] if len(parts) > 3 and parts[3] in ("b", "n") else "b"
+        page = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 0
+        note = ""
+        if act in ("ban", "unban"):
+            store = store_of(context)
+            if is_admin(target):
+                note = "⚠️ Admins cannot be banned.\n\n"
+            elif store.peek(target) is None:
+                note = "⚠️ User not found.\n\n"
+            else:
+                try:
+                    await store.set_banned(target, act == "ban")
+                except StorageError as e:
+                    note = f"⚠️ {html.escape(str(e))}\n\n"
+                else:
+                    if act == "ban":
+                        clear_activation(target)          # stop their running numbers / SMS polling
+                        note = "🚫 <b>User banned.</b> They can no longer use the bot.\n\n"
+                    else:
+                        note = "✅ <b>User unbanned.</b> They can use the bot again.\n\n"
+                    backup_soon(app)
+        text, kb = user_detail_view(context, target, sort, page)
+        await safe_edit(q, note + text, kb)
+
     elif act == "backup":
         await safe_edit(q, "⏳ Sending backup…")
         ok, msg = await app.bot_data["backup"].send_backup(force=True)
@@ -2461,6 +2617,7 @@ def main() -> None:
     app = (ApplicationBuilder().token(token)
            .post_init(post_init).post_shutdown(post_shutdown).build())
 
+    app.add_handler(TypeHandler(Update, ban_gate), group=-4)             # banned users are blocked completely
     app.add_handler(TypeHandler(Update, remember_name), group=-3)        # stores first names for the leaderboard
     app.add_handler(TypeHandler(Update, maintenance_gate), group=-2)     # Stop mode: blocks everyone except admins
     app.add_handler(TypeHandler(Update, join_gate), group=-1)            # must be in the required group
@@ -2480,6 +2637,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_WITHDRAW}$"), msg_withdraw))
     app.add_handler(CommandHandler("withdraw", msg_withdraw))
     app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("user", cmd_user))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_ADMIN}$"), cmd_admin))
     app.add_handler(MessageHandler(filters.Document.ALL & filters.ChatType.PRIVATE, on_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text), group=1)
