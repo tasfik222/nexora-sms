@@ -9,6 +9,8 @@ Settings:
                         Changed from the admin panel (Admin -> 💰 Range prices).
     maintenance         True = bot is stopped for users (update in progress); admins can still use it.
                         Changed from the admin panel (Admin -> 🛑 Stop / ▶️ Start).
+    announcement        custom group-announcement text (HTML) or "" = the built-in default.
+                        Changed from the admin panel (Admin -> 📣 Announce -> ✏️ Edit text).
     range_names         {range: "display name"} - a custom name shown to users instead of the raw range.
                         Changed from the admin panel (Admin -> 🏷 Range names).
 """
@@ -28,6 +30,7 @@ MAX_NUMBERS = 10
 DEFAULT_NUMBERS = 1
 DEFAULT_PRICE = 30          # paisa -> ৳0.30 (same as the old fixed price)
 MAX_NAME_LEN = 40
+MAX_ANNOUNCEMENT = 4000
 MAX_PRICE = 100_000         # paisa -> ৳1000 per SMS, just a safety cap against typos
 
 
@@ -39,7 +42,7 @@ def range_key(range_str: str) -> str:
 class SettingsStore:
     def __init__(self) -> None:
         self.path = Path(os.getenv("LOCAL_DATA_DIR") or "data") / "settings.json"
-        self._data: dict = {"numbers_per_range": DEFAULT_NUMBERS, "default_price": DEFAULT_PRICE, "range_prices": {}, "range_names": {}, "maintenance": False}
+        self._data: dict = {"numbers_per_range": DEFAULT_NUMBERS, "default_price": DEFAULT_PRICE, "range_prices": {}, "range_names": {}, "maintenance": False, "announcement": ""}
         self.load()
 
     def load(self) -> None:
@@ -54,6 +57,7 @@ class SettingsStore:
                     if range_key(k) and self._price(v, None) is not None
                 }
                 self._data["maintenance"] = bool(raw.get("maintenance", False))
+                self._data["announcement"] = str(raw.get("announcement") or "")[:MAX_ANNOUNCEMENT]
                 names = raw.get("range_names") or {}
                 self._data["range_names"] = {
                     range_key(k): self._name(v) for k, v in names.items()
@@ -138,6 +142,15 @@ class SettingsStore:
 
     def set_maintenance(self, on: bool) -> None:
         self._data["maintenance"] = bool(on)
+        self._save()
+
+    # -- announcement text ----------------------------------------------------------
+    @property
+    def announcement(self) -> str:
+        return self._data["announcement"]
+
+    def set_announcement(self, html_text: str) -> None:
+        self._data["announcement"] = (html_text or "").strip()[:MAX_ANNOUNCEMENT]
         self._save()
 
     # -- range names ------------------------------------------------------------
