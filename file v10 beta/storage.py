@@ -140,10 +140,12 @@ class UserStore:
         self._cache: dict[int, dict] = {}
         self._load_locks: dict[int, asyncio.Lock] = {}
         self.changes = 0     # bumped on every save; the backup task watches it
+        self._banned: set[int] = set()   # ids of banned users (kept in memory so the gate is instant)
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
         self.local_dir.mkdir(parents=True, exist_ok=True)
+        self._load_banned()
         log.info("User data is saved locally in %s", self.local_dir)
 
     async def migrate_all(self) -> None:
@@ -232,6 +234,28 @@ class UserStore:
         self._save(uid)
         return rec["balance"]
 
+    # ------------------------------------------------------------------ ban / unban
+    def is_banned(self, uid: int) -> bool:
+        return uid in self._banned
+
+    def banned_ids(self) -> set[int]:
+        return set(self._banned)
+
+    async def set_banned(self, uid: int, banned: bool) -> dict:
+        """Ban or unban a user. The flag is saved in the user's own file (so it survives restarts and backups).
+        Balance and history are never touched."""
+        rec = await self.get(uid)
+        if banned:
+            rec["banned"] = True
+            rec["banned_at"] = _now()
+            self._banned.add(uid)
+        else:
+            rec["banned"] = False
+            rec.pop("banned_at", None)
+            self._banned.discard(uid)
+        self._save(uid)
+        return rec
+
     def peek(self, uid: int) -> Optional[dict]:
         """The user's record if it is already known (cache or local file); never creates one."""
         rec = self._cache.get(uid)
@@ -312,10 +336,29 @@ class UserStore:
             return False
         self._cache[uid] = rec
         self._write_local(uid, rec)
+        if rec.get("banned"):
+            self._banned.add(uid)
+        else:
+            self._banned.discard(uid)
         self.changes += 1
         return True
 
     # ------------------------------------------------------------------ internals
+    def _load_banned(self) -> None:
+        """Read which users are banned from the saved files (bad files are skipped, never changed)."""
+        found: set[int] = set()
+        for p in self.local_dir.glob("*.json"):
+            if not p.stem.isdigit():
+                continue
+            try:
+                if json.loads(p.read_text(encoding="utf-8")).get("banned"):
+                    found.add(int(p.stem))
+            except (OSError, ValueError, AttributeError):
+                continue
+        self._banned = found
+        if found:
+            log.info("%d banned user(s) loaded.", len(found))
+
     @staticmethod
     def _new_record(uid: int, username: str | None) -> dict:
         return {
