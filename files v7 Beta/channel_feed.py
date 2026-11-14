@@ -8,7 +8,13 @@ posted to a Telegram channel/group as a colourful card.
 Environment variables:
     CHANNEL_ID        required. "-1001234567890" or "@yourchannel". The bot must be in the chat
                       (admin with "Post messages" for a channel).
-    FEED_INTERVAL     optional, seconds between checks (default 5)
+    FEED_INTERVAL     optional, seconds between checks (default 1, minimum 0.5)
+    FEED_PER_MIN      optional, max messages per minute sent to the chat (default 18). Telegram allows only about
+                      20 per minute in a group; above that it blocks the bot for 30-60 s ("flood-wait").
+                      When more SMS arrive than that, several cards are packed into ONE message instead of
+                      waiting - nothing is lost and nothing is delayed.
+    FEED_PAUSE_EVERY  optional, after this many seconds of non-stop sending... (default 60)
+    FEED_PAUSE_SEC    ...the feed sleeps this many seconds (default 5), then continues. 0 = never pause.
     FEED_MASK         optional, "1" (default) also hides the middle digits of fully visible numbers.
                       Console numbers that already end in XXX are shown as they are.
     FEED_BOT_LINK     optional, e.g. "https://t.me/YourBot" -> adds an "Open Bot" button under each card.
@@ -23,7 +29,7 @@ import html
 import logging
 import os
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from typing import Awaitable, Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -37,6 +43,7 @@ log = logging.getLogger("voltx.feed")
 
 SEEN_LIMIT = 5000         # remembered rows per site
 QUEUE_LIMIT = 500         # max cards waiting to be sent (oldest dropped beyond this)
+MAX_MESSAGE = 3900        # cards are packed into one message up to this many characters (Telegram max 4096)
 
 THEMES = [
     {"bar": "🟦", "dot": "🔵"},
@@ -53,6 +60,13 @@ SERVICES = {  # keyword -> (emoji, display name)
     "netflix": ("🎬", "Netflix"), "viber": ("📞", "Viber"), "imo": ("🟡", "IMO"),
     "wechat": ("💚", "WeChat"), "signal": ("🔒", "Signal"),
 }
+
+
+def _num(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name) or default)
+    except ValueError:
+        return default
 
 
 def detect_service(*texts: str) -> tuple[str, str]:
@@ -102,7 +116,15 @@ class ChannelFeed:
         self.order = order                       # site keys that have a console
         self.position = position                 # site key -> 1, 2 (the "Get Number N" number)
         self.channel = (os.getenv("CHANNEL_ID") or "").strip()
-        self.interval = max(2.0, float(os.getenv("FEED_INTERVAL", "5") or 5))
+        self.interval = max(0.5, _num("FEED_INTERVAL", 1.0))
+        self.per_min = int(min(19, max(1, _num("FEED_PER_MIN", 18))))
+        self.pause_every = max(5.0, _num("FEED_PAUSE_EVERY", 60.0))
+        self.pause_sec = max(0.0, _num("FEED_PAUSE_SEC", 5.0))
+        self._window_start = 0.0                  # start of the current non-stop sending period
+        self._pause_until = 0.0
+        self._last_send = 0.0
+        self.window = 60.0                         # the rate limit is per_min messages per this many seconds
+        self._sent_at: deque[float] = deque()      # times of the messages sent during the last window
         self.mask = (os.getenv("FEED_MASK", "1").strip() != "0")
         link = (os.getenv("FEED_BOT_LINK") or "").strip()
         self.markup = (InlineKeyboardMarkup([[InlineKeyboardButton("🤖 Open Bot", url=link)]])
@@ -110,7 +132,8 @@ class ChannelFeed:
         self.seen: dict[str, OrderedDict[str, None]] = {}
         self.task: asyncio.Task | None = None
         self.sender: asyncio.Task | None = None
-        self.queue: asyncio.Queue = asyncio.Queue()
+        self.pending: deque = deque()               # (site key, entry) cards waiting to be sent
+        self.wake = asyncio.Event()
 
     @property
     def enabled(self) -> bool:
@@ -171,45 +194,96 @@ class ChannelFeed:
                     fresh.sort(key=lambda e: e.time)       # oldest first
                     for e in fresh:
                         self._remember(key, e.entry_id)
-                        if self.queue.qsize() >= QUEUE_LIMIT:
-                            try:
-                                self.queue.get_nowait()          # drop the oldest waiting card
-                            except asyncio.QueueEmpty:
-                                pass
+                        if len(self.pending) >= QUEUE_LIMIT:
+                            self.pending.popleft()               # drop the oldest waiting card
                             log.warning("Feed: send queue full, dropped the oldest card")
-                        self.queue.put_nowait((key, e))          # polling never waits for Telegram
+                        self.pending.append((key, e))            # polling never waits for Telegram
+                        self.wake.set()
             except asyncio.CancelledError:
                 return
             except Exception:
                 log.exception("Feed loop error (continuing)")
 
+    async def _breather(self) -> None:
+        """After `pause_every` seconds of non-stop sending the feed sleeps `pause_sec` seconds. A card that
+        arrives after a quiet moment is never delayed by this."""
+        now = time.monotonic()
+        if now - self._last_send > 2.0:                    # quiet before this: start a fresh sending period
+            self._window_start = now
+        elif self.pause_sec and now - self._window_start >= self.pause_every:
+            self._window_start = now + self.pause_sec      # the next period begins after the pause
+            self._pause_until = now + self.pause_sec
+        wait = self._pause_until - now
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    async def _rate_wait(self) -> None:
+        """Keeps us under Telegram's per-chat limit: at most `per_min` messages in any 60 seconds. While we
+        wait, new cards pile up in `pending` and go out together in one message."""
+        while True:
+            now = time.monotonic()
+            while self._sent_at and now - self._sent_at[0] >= self.window:
+                self._sent_at.popleft()
+            wait = max(self._pause_until - now,
+                       (self._sent_at[0] + self.window - now) if len(self._sent_at) >= self.per_min else 0)
+            if wait <= 0:
+                return
+            await asyncio.sleep(min(wait, 1.0))              # short steps: a flood-wait set elsewhere is honoured
+
+    def _take_batch(self) -> list[tuple[str, ConsoleEntry]]:
+        """Oldest cards first; as many as fit in one message (usually just one)."""
+        batch, size = [], 0
+        while self.pending:
+            key, entry = self.pending[0]
+            n = len(self._card(key, entry)) + 2
+            if batch and size + n > MAX_MESSAGE:
+                break
+            self.pending.popleft()
+            batch.append((key, entry))
+            size += n
+        return batch
+
+    def _card(self, key: str, entry: ConsoleEntry) -> str:
+        label, theme = self.label_and_theme(key)
+        return build_card(entry, label, theme, self.mask)
+
     async def _send_loop(self) -> None:
-        """Sends queued cards one by one, so a Telegram flood-wait never stops the polling."""
+        """One sender. Sends the waiting cards as fast as Telegram allows; when more cards arrive than the
+        per-minute limit lets through, several are packed into one message (no waiting, nothing lost)."""
         while True:
             try:
-                key, entry = await self.queue.get()
-                await self._post(key, entry)
-                await asyncio.sleep(0.3)
+                if not self.pending:
+                    self.wake.clear()
+                    await self.wake.wait()
+                await self._breather()
+                await self._rate_wait()
+                batch = self._take_batch()
+                if not batch:
+                    continue
+                await self._post("\n\n".join(self._card(k, e) for k, e in batch))
+                self._sent_at.append(time.monotonic())
+                self._last_send = time.monotonic()
             except asyncio.CancelledError:
                 return
             except Exception:
                 log.exception("Feed: sender error (continuing)")
 
-    async def _post(self, key: str, entry: ConsoleEntry) -> None:
-        label, theme = self.label_and_theme(key)
-        text = build_card(entry, label, theme, self.mask)
+    async def _post(self, text: str) -> None:
         for attempt in range(6):
             try:
                 await self.bot.send_message(self.channel, text, parse_mode=ParseMode.HTML,
-                                            reply_markup=self.markup, disable_web_page_preview=True)
+                                            reply_markup=self.markup, disable_web_page_preview=True,
+                                            read_timeout=20, write_timeout=20, connect_timeout=10)
                 return
             except RetryAfter as e:
                 log.info("Feed: Telegram flood-wait, sleeping %ss", e.retry_after)
-                await asyncio.sleep(e.retry_after + 1)
+                self._pause_until = max(self._pause_until, time.monotonic() + e.retry_after + 0.5)
+                self._sent_at.clear()
+                await asyncio.sleep(e.retry_after + 0.5)
             except (Forbidden, BadRequest) as e:
                 log.error("Feed: cannot post to chat: %s", e)
                 return
             except TelegramError as e:
                 log.warning("Feed: send failed (%s), attempt %d", e, attempt + 1)
                 await asyncio.sleep(2)
-        log.error("Feed: gave up on one card after 6 attempts")
+        log.error("Feed: gave up on one message after 6 attempts")
