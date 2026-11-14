@@ -1764,6 +1764,11 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("adm_price", None)
         context.user_data.pop("adm_name", None)
         context.user_data.pop("adm_ann", None)
+        context.user_data.pop("adm_usearch", None)
+        return
+
+    if context.user_data.get("adm_usearch") and is_admin(user.id):
+        await handle_user_search_input(update, context, text)
         return
 
     if context.user_data.get("adm_ann") and is_admin(user.id):
@@ -2018,9 +2023,61 @@ def users_view(context: ContextTypes.DEFAULT_TYPE, sort: str, page: int) -> tupl
         nav.append(btn("Next ➡️", callback_data=f"adm:users:{sort}:{page + 1}"))
     rows.append(nav)
     other = "n" if sort == "b" else "b"
-    rows.append([btn("🆕 Sort: newest" if sort == "b" else "💰 Sort: balance", callback_data=f"adm:users:{other}:0")])
+    rows.append([btn("🔍 Search user", callback_data="adm:usrsearch", style="primary"),
+                 btn("🆕 Sort: newest" if sort == "b" else "💰 Sort: balance", callback_data=f"adm:users:{other}:0")])
     rows.append([btn("⬅️ Back", callback_data="adm:home")])
     return text, InlineKeyboardMarkup(rows)
+
+
+def find_users(store: UserStore, query: str) -> list[dict]:
+    """Search by Telegram ID (full or part), @username or name (part of it, any case). Best matches first."""
+    q = query.strip().lstrip("@").casefold()
+    if not q:
+        return []
+    hits = []
+    for rec in store.export_all().values():
+        uid = str(rec.get("user_id", ""))
+        uname = (rec.get("username") or "").casefold()
+        fname = (rec.get("first_name") or "").casefold()
+        if q == uid or q == uname:
+            rank = 0                                   # exact ID / username
+        elif q.isdigit() and q in uid:
+            rank = 1                                   # part of an ID
+        elif q in uname or q in fname:
+            rank = 2                                   # part of username / name
+        else:
+            continue
+        hits.append((rank, -int(rec.get("balance", 0)), rec))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return [h[2] for h in hits]
+
+
+async def handle_user_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    """The admin typed something after pressing 🔍 Search user."""
+    context.user_data.pop("adm_usearch", None)
+    store = store_of(context)
+    found = find_users(store, text)
+    again = btn("🔍 Search again", callback_data="adm:usrsearch", style="primary")
+    back = btn("⬅️ Back to users", callback_data="adm:users:b:0")
+    if not found:
+        await update.effective_message.reply_text(
+            f"❌ No user found for <b>{html.escape(text[:40])}</b>.", reply_markup=InlineKeyboardMarkup([[again], [back]]),
+            parse_mode=ParseMode.HTML)
+        return
+    if len(found) == 1:                                # exactly one match: open it straight away
+        out, kb = user_detail_view(context, int(found[0]["user_id"]))
+        rows = list(kb.inline_keyboard)
+        rows.insert(len(rows) - 1, [again])
+        await update.effective_message.reply_text(out, reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
+        return
+    rows = [[btn(f"{'🚫 ' if store.is_banned(int(r['user_id'])) else ''}{user_label(r)} · "
+                 f"{money(int(r.get('balance', 0)))} · {r['user_id']}"[:60],
+                 callback_data=f"adm:usr:{int(r['user_id'])}:b:0")] for r in found[:10]]
+    rows += [[again], [back]]
+    more = f"\n(showing the first 10 of {len(found)} - type more of the name to narrow it down)" if len(found) > 10 else ""
+    await update.effective_message.reply_text(
+        f"🔍 <b>{len(found)}</b> user(s) found for <b>{html.escape(text[:40])}</b>{more}\n\nTap one:",
+        reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
 
 
 def user_detail_view(context: ContextTypes.DEFAULT_TYPE, uid: int, sort: str = "b",
@@ -2096,6 +2153,8 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if act != "rej":
         context.user_data.pop("adm_reject", None)
+    if act != "usrsearch":
+        context.user_data.pop("adm_usearch", None)
     if act not in ("pset", "pdef", "prng"):
         context.user_data.pop("adm_price", None)
     if act != "nrng":
@@ -2429,6 +2488,14 @@ async def on_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
         text, kb = users_view(context, sort, page)
         await safe_edit(q, text, kb)
+
+    elif act == "usrsearch":
+        context.user_data["adm_usearch"] = True
+        await safe_edit(q, "🔍 <b>Search user</b>\n\nSend one of these as a message:\n"
+                           "• Telegram ID (or part of it)\n"
+                           "• @username\n"
+                           "• name (part of the name is fine)",
+                        InlineKeyboardMarkup([[btn("✖ Cancel", callback_data="adm:users:b:0", style="danger")]]))
 
     elif act in ("usr", "ban", "unban"):
         if not arg.lstrip("-").isdigit():
