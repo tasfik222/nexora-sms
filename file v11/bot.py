@@ -300,7 +300,6 @@ def bottom_menu_kb(uid: int | None = None) -> ReplyKeyboardMarkup:
     rows.append(([kbtn(BTN_CONSOLE, "success")] if console_buttons() else []) + [kbtn(BTN_HELP, "primary")]
                 + ([kbtn(BTN_ADMIN, "danger")] if is_admin(uid) and FEATURES["withdraw"] else []))
     rows.append([kbtn(BTN_LEADER, "primary")])
-    rows.append([kbtn(BTN_GAME, "success")])                      # one button across the whole bottom row
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True,
                                input_field_placeholder="Choose from the menu below 👇")
 
@@ -317,7 +316,6 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [btn(BTN_HELP, callback_data="help", style="primary")],
         [btn(BTN_LEADER, callback_data="leaderboard", style="primary")],
         [btn_url(BTN_SUPPORT, SUPPORT_LINK, "primary")],
-        [btn(BTN_GAME, callback_data="ar:home", style="success")],     # opens the Arena (arena.py)
     ])
 
 
@@ -1474,7 +1472,7 @@ def backup_soon(app: Application) -> None:
 
 
 def menu_labels() -> set[str]:
-    return {BTN_BAL, BTN_HELP, BTN_CONSOLE, BTN_TOP, BTN_SUPPORT, BTN_WITHDRAW, BTN_ADMIN, BTN_GAME, BTN_LEADER} | {l for _, l in get_buttons()}
+    return {BTN_BAL, BTN_HELP, BTN_CONSOLE, BTN_TOP, BTN_SUPPORT, BTN_WITHDRAW, BTN_ADMIN, BTN_LEADER} | {l for _, l in get_buttons()}
 
 
 # ---- user side --------------------------------------------------------------
@@ -2661,6 +2659,7 @@ async def post_init(app: Application) -> None:
         await app.bot.set_my_commands([
             BotCommand("start", "Open the menu"),
             BotCommand("balance", "Show my balance"),
+            BotCommand("game", "Play mini-games"),
             BotCommand("console", "Open the site consoles"),
             BotCommand("support", "Contact support"),
             BotCommand("withdraw", "Withdraw your balance"),
@@ -2708,7 +2707,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", msg_help))
     app.add_handler(CommandHandler("support", msg_support))
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_SUPPORT}$"), msg_support))
-    arena.register(app, BTN_GAME, lambda text: text in menu_labels())   # 🎮 Game = Arena mini-games
+    arena.register(app, lambda text: text in menu_labels())   # /game = Arena mini-games (no menu button)
     app.add_handler(MessageHandler(filters.Regex(f"^{BTN_LEADER}$"), msg_leaderboard))
     app.add_handler(CommandHandler("leaderboard", msg_leaderboard))
     app.add_handler(MessageHandler(filters.Regex(r"^📲 Get Number( \d)?$"), msg_get_number))
