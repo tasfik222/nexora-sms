@@ -638,6 +638,14 @@ async def join_prompt(app: Application) -> tuple[str, InlineKeyboardMarkup]:
     return JOIN_TEXT, InlineKeyboardMarkup(rows)
 
 
+async def group_silence_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The bot does not answer anything typed in a group (commands, buttons, text).
+    It still posts announcements to the group, which is an outgoing message and not affected by this."""
+    chat = update.effective_chat
+    if chat is not None and chat.type in ("group", "supergroup"):
+        raise ApplicationHandlerStop
+
+
 async def join_gate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Runs before every handler: someone who is not in the required group only sees the join notice."""
     if REQUIRED_GROUP is None:
@@ -2690,6 +2698,7 @@ def main() -> None:
     app = (ApplicationBuilder().token(token)
            .post_init(post_init).post_shutdown(post_shutdown).build())
 
+    app.add_handler(TypeHandler(Update, group_silence_gate), group=-5)   # no replies inside groups
     app.add_handler(TypeHandler(Update, ban_gate), group=-4)             # banned users are blocked completely
     app.add_handler(TypeHandler(Update, remember_name), group=-3)        # stores first names for the leaderboard
     app.add_handler(TypeHandler(Update, maintenance_gate), group=-2)     # Stop mode: blocks everyone except admins
