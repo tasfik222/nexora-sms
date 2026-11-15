@@ -801,7 +801,9 @@ async def remember_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     u = update.effective_user
     if u is not None and not u.is_bot:
         try:
-            await context.application.bot_data["store"].set_name(u.id, u.first_name)
+            store = context.application.bot_data["store"]
+            await store.set_name(u.id, u.first_name)
+            store.mark_seen(u.id)
         except Exception:
             log.debug("remember_name failed", exc_info=True)
 
@@ -2119,7 +2121,8 @@ def user_detail_view(context: ContextTypes.DEFAULT_TYPE, uid: int, sort: str = "
             f"🆔 <code>{uid}</code>\n\n"
             f"💰 Balance: <b>{money(int(rec.get('balance', 0)))}</b>\n"
             f"📨 SMS codes received: <b>{int(rec.get('total_codes', 0) or 0)}</b>\n"
-            f"📅 Joined: {fmt_utc(rec.get('created_at'))}\n\n"
+            f"📅 Joined: {fmt_utc(rec.get('created_at'))}\n"
+            f"🕒 Last seen: {fmt_utc(rec.get('last_seen')) if rec.get('last_seen') else 'not recorded yet'}\n\n"
             + (f"🚫 Status: <b>BANNED</b> (since {fmt_utc(rec.get('banned_at'))})" if banned
                else "✅ Status: <b>Active</b>"))
     if is_admin(uid):
