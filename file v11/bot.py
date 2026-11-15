@@ -1081,15 +1081,29 @@ async def order_number(q, context: ContextTypes.DEFAULT_TYPE, provider: str, rid
                 pass
 
         clear_activation(uid)
+        is_change = retry == "change" and existing is not None
+        old_id, chat_id = q.message.message_id, q.message.chat_id
         act = Activation(
-            rid=rid, provider=provider, chat_id=q.message.chat_id, message_id=q.message.message_id,
+            rid=rid, provider=provider, chat_id=chat_id, message_id=old_id,
             order_ms=order_ms, slots=slots, requested=count, price=price, service=service, range_name=range_name,
         )
         ACTIVATIONS[uid] = act
         for sl in slots:
             NUMBER_OWNER[owner_key(provider, sl.no_plus)] = uid
+        if is_change:
+            # Change Number: the new number is a NEW message at the bottom of the chat (the old one is removed below).
+            sent = await context.bot.send_message(chat_id, activation_text(act), reply_markup=activation_kb(act),
+                                                  parse_mode=ParseMode.HTML)
+            act.message_id = sent.message_id
         act.poll_task = context.application.create_task(poll_for_sms(context.application, uid))
 
+    if is_change:
+        try:
+            await context.bot.delete_message(chat_id, old_id)           # the previous number's message
+        except TelegramError:
+            # Telegram refuses to delete it (e.g. older than 48h): at least show it is no longer active
+            await safe_edit(q, "🔁 <i>Replaced by a new number below.</i>")
+        return
     await safe_edit(q, activation_text(act), activation_kb(act))
 
 
