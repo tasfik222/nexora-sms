@@ -26,6 +26,7 @@ Assumes ONE running bot instance.
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import logging
 import os
@@ -141,6 +142,7 @@ class UserStore:
         self._load_locks: dict[int, asyncio.Lock] = {}
         self.changes = 0     # bumped on every save; the backup task watches it
         self._banned: set[int] = set()   # ids of banned users (kept in memory so the gate is instant)
+        self._seen_saved: dict[int, float] = {}   # when each user's "last seen" was last written to disk
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -259,6 +261,17 @@ class UserStore:
     def save(self, uid: int) -> None:
         """Save a record the caller has changed in place (used by the Arena games)."""
         if uid in self._cache:
+            self._save(uid)
+
+    def mark_seen(self, uid: int) -> None:
+        """Remember that this user just talked to the bot (admin sees "Last seen").
+        Kept in memory on every message; written to disk at most every 5 minutes to avoid a write per message."""
+        rec = self._cache.get(uid)
+        if rec is None:
+            return
+        rec["last_seen"] = _now()
+        if time.time() - self._seen_saved.get(uid, 0.0) >= 300:
+            self._seen_saved[uid] = time.time()
             self._save(uid)
 
     def peek(self, uid: int) -> Optional[dict]:
