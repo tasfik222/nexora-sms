@@ -886,11 +886,9 @@ def _claim_daily(app: Application, rec: dict, prof: dict, uid: int, lang: str) -
 
 
 # ----------------------------------------------------------------------------- registration
-def register(app: Application, button_label: str, is_menu_text) -> None:
-    """Wire the Arena into the bot. `button_label` is the bottom-menu 🎮 button text."""
-    import re
-    app.add_handler(MessageHandler(filters.Regex(f"^{re.escape(button_label)}$"), msg_arena))
-    app.add_handler(CommandHandler("arena", msg_arena))
+def register(app: Application, is_menu_text) -> None:
+    """Wire the Arena into the bot. The Arena opens with /game (there is no menu button)."""
+    app.add_handler(CommandHandler("game", msg_arena))
     app.add_handler(CommandHandler("join", cmd_join))
     app.add_handler(CommandHandler("guess", cmd_guess))
     app.add_handler(CallbackQueryHandler(on_arena_callback, pattern=r"^ar:"))
