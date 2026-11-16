@@ -142,3 +142,7 @@ Released under the [MIT License](./LICENSE). Copyright (c) 2026 Tasfik Abdullah.
 ## Author
 
 **Tasfik Abdullah** - [@tasfik222](https://github.com/tasfik222)
+
+💬 **Discord:** Join my Discord community for communication, information, and support.
+
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
