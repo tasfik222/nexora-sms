@@ -408,7 +408,15 @@ HELP_TEXT = (
     "Name: Tasfik Abdullah\n"
     "Education: Diploma, Barisal Polytechnic Institute\n"
     "Born: 2001\n"
-    "Email: tasfikonim3@gmail.com"
+    "Email: tasfikonim3@gmail.com\n\n"
+    "<b>🛠 Need something built? Contact me:</b>\n"
+    "• Telegram bots\n"
+    "• Discord bots\n"
+    "• Websites & web apps\n"
+    "• Automation & custom tools\n"
+    "• Maintenance & changes to existing bots\n"
+    "📩 Email: tasfikonim3@gmail.com\n"
+    "💬 Telegram: @tasfikabdullah6"
 )
 
 
