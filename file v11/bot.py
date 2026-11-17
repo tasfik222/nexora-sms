@@ -268,7 +268,7 @@ def service_emoji(name: str) -> str:
 
 
 # Labels of the always-visible menu under the message box (also used to match incoming messages).
-BTN_GET, BTN_BAL, BTN_HELP = "📲 Get Number", "💰 My Balance", "❓ Help"
+BTN_GET, BTN_BAL, BTN_HELP = "📲 Get Number", "💰 My Balance", "ℹ️ About"
 BTN_TOP = "🔥 Top Traffic"
 BTN_SUPPORT = "🆘 Support"
 BTN_GAME = "🎮 Game"
@@ -2696,7 +2696,7 @@ async def post_init(app: Application) -> None:
             BotCommand("console", "Open the site consoles"),
             BotCommand("support", "Contact support"),
             BotCommand("withdraw", "Withdraw your balance"),
-            BotCommand("help", "How it works"),
+            BotCommand("help", "About this bot"),
         ])
     except TelegramError as e:
         log.warning("Could not set the command menu: %s", e)
