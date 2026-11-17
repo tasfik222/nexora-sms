@@ -403,7 +403,12 @@ HELP_TEXT = (
     "5. <b>🔥 Top Traffic</b> shows the 10 busiest ranges right now - tap one to get a number from it.\n"
     "6. Every SMS you receive adds the <b>Reward</b> shown for your range to your balance (see <b>My Balance</b>).\n"
     f"7. <b>💸 Withdraw</b>: fill in the form (method, number, amount; minimum {money(WITHDRAW_MIN)}). "
-    "An admin checks it and pays you."
+    "An admin checks it and pays you.\n\n"
+    "<b>👨‍💻 Developer</b>\n"
+    "Name: Tasfik Abdullah\n"
+    "Education: Diploma, Barisal Polytechnic Institute\n"
+    "Born: 2001\n"
+    "Email: tasfikonim3@gmail.com"
 )
 
 
