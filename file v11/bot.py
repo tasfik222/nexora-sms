@@ -394,6 +394,8 @@ def activation_text(act: Activation) -> str:
     return "\n".join(lines)
 
 
+BOT_VERSION = "0.11.0"
+
 HELP_TEXT = (
     "<b>How it works</b>\n\n"
     "1. Tap a <b>Get Number</b> button, then pick a service and a range.\n"
@@ -416,7 +418,8 @@ HELP_TEXT = (
     "• Automation & custom tools\n"
     "• Maintenance & changes to existing bots\n"
     "📩 Email: tasfikonim3@gmail.com\n"
-    "💬 Telegram: @tasfikabdullah6"
+    "💬 Telegram: @tasfikabdullah6\n\n"
+    f"<i>Version {BOT_VERSION}</i>"
 )
 
 
