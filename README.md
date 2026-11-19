@@ -1,18 +1,19 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-0.13.1-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.1)
+[![Version](https://img.shields.io/badge/version-0.13.2-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.2)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `0.13.1`** — see [`bot-0.13.1`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.1). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `0.13.2`** — see [`bot-0.13.2`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.2). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 0.13.2](#whats-new-in-0132)
 - [What's new in 0.13.1](#whats-new-in-0131)
 - [What's new in 0.13.0](#whats-new-in-0130)
 - [What's new in 0.12.0](#whats-new-in-0120)
@@ -41,7 +42,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - **Withdraw** — request a payout via bKash, Nagad or Rocket. The minimum is configurable.
 - **Top Traffic** — the busiest ranges of the last N minutes. Tap one to order from it.
 - **Leaderboard** — top 10 users by OTPs, daily (resets at 12:00 AM) and lifetime.
-- **Arena (`/game`)** — mini-games: Quiz, Word Scramble, Code Breaker, Tic-Tac-Toe and Memory. Single, duo and squad modes, private rooms, XP, ELO and daily rewards. English and Bangla. Game coins are separate from the money balance and never change it.
+- **Arena (`/game`)** — mini-games: Quiz, Word Scramble, Code Breaker, Tic-Tac-Toe and Memory. Quiz questions and scramble words are refreshed by AI when an AI key is set. Single, duo and squad modes, private rooms, XP, ELO and daily rewards. English and Bangla. Game coins are separate from the money balance and never change it.
 - **AI Support (`/ai`)** — a chat assistant for questions about numbers, OTPs, rewards, balance, withdrawals, how to use the bot, and general or study questions. It remembers the recent conversation, and each user has a daily question limit.
 - **Idle reminders** — if you have been away for a while during the day, the bot tells you the busiest range right now. You can turn this off at any time (see [Commands](#commands)).
 - **ℹ️ About** — how it works, the bot version, and the developer's contact details.
@@ -63,6 +64,15 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 0.13.2
+
+- **Fresh quiz questions and scramble words**: the built-in lists were small, so the same items came up often. When an AI key is set, the bot asks the AI for new questions (English and Bangla) and new words every 30 minutes. Only valid, new items are kept.
+- **Less repetition**: questions shown recently are avoided within the next matches when possible.
+- **Without an AI key** the arena uses the built-in lists, as before.
+- No new environment variables. The same AI keys are used.
 
 ---
 
@@ -115,7 +125,8 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | `restart_watch.py` | Restart reminder: tells admins to restart the bot 3 days after each start |
 | `arena.py` | Telegram side of the mini-game arena (menus, matches, rooms, rewards) |
 | `arena_games.py` | Game rules for the arena (pure Python, no Telegram) |
-| `arena_quiz_data.py` | Quiz questions in English and Bangla |
+| `arena_quiz_data.py` | Built-in quiz questions in English and Bangla |
+| `arena_content.py` | Refreshes quiz questions and scramble words with AI, with fallback to built-in lists |
 | `channel_feed.py` | Optional channel feed of new SMS |
 | `otp_format.py` | Formats the OTP messages sent to users |
 | `backup.py` | Creates and restores data backups |
@@ -137,7 +148,7 @@ No database is needed. User data is stored in JSON files.
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-0.13.1
+cd nexora-telegram-bot-python-code/bot-0.13.2
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -203,7 +214,7 @@ python bot.py
 
 1. Get a key from one provider (for example Gemini at Google AI Studio).
 2. Set it as an environment variable, such as `GEMINI_API_KEY`.
-3. Restart the bot. The **🤖 AI Support** button and `/ai` command appear automatically.
+3. Restart the bot. The **🤖 AI Support** button and `/ai` command appear automatically. The same key also refreshes the arena's quiz questions and word scramble words.
 
 If you have more than one key, set `AI_PROVIDER` to choose which one is used. Check the model name with your provider and set `AI_MODEL` if it changes.
 
