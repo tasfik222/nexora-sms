@@ -1,18 +1,20 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-1.0.3-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.3)
+[![Version](https://img.shields.io/badge/version-1.0.5-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.5)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `1.0.3`** — see [`bot-1.0.3`](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.3). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `1.0.5`** — see [`bot-1.0.5`](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.5). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 1.0.5](#whats-new-in-105)
+- [What's new in 1.0.4](#whats-new-in-104)
 - [What's new in 1.0.3](#whats-new-in-103)
 - [What's new in 1.0.2](#whats-new-in-102)
 - [What's new in 1.0.0](#whats-new-in-100)
@@ -70,6 +72,18 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 1.0.5
+
+- **About lists all commands**: the About page now has a **Commands** section with every command and what it does.
+
+---
+
+## What's new in 1.0.4
+
+- **Features overview is up to date**: the 📘 Features message marks version 1.0.3 as current, and shows 1.0.2 as a separate earlier release.
 
 ---
 
@@ -189,7 +203,7 @@ No database is needed. User data is stored in JSON files.
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-1.0.3
+cd nexora-telegram-bot-python-code/bot-1.0.5
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
