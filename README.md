@@ -6,7 +6,7 @@
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `0.12.0`** — see [`bot-0.12.0`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.12.0). Older folders (`files`, `files v2` … `file v10 beta`) are kept for history.
+> **Latest version: `0.12.0`** — see [`bot-0.13.0`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.0). Older folders (`files`, `files v2` … `file v10 beta`) are kept for history.
 
 ---
 
