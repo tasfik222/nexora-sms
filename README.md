@@ -1,18 +1,19 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-0.13.0-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.0)
+[![Version](https://img.shields.io/badge/version-0.13.1-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.1)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `0.13.0`** — see [`bot-0.13.0`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.0). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `0.13.1`** — see [`bot-0.13.1`](https://github.com/tasfik222/nexora-sms/tree/main/bot-0.13.1). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 0.13.1](#whats-new-in-0131)
 - [What's new in 0.13.0](#whats-new-in-0130)
 - [What's new in 0.12.0](#whats-new-in-0120)
 - [Project structure](#project-structure)
@@ -53,6 +54,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - User list with search, ban / unban, and per-user details (`/user <id>`), including **Last seen**.
 - Post and pin a **group announcement** with an editable text.
 - **Backups** — sent to a private chat and restorable by uploading the `.zip` back to the bot.
+- **Restart timer** (♻️ button) — shows when the bot last started and when the restart reminder is due. **Restarted now** resets the timer.
 
 ### Other
 
@@ -61,6 +63,14 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 0.13.1
+
+- **Restart reminder for admins**: the bot records its start time. Three days (72 hours) after each start, every admin gets a reminder to restart the bot. Free hosting stops the bot after about 4 days, so this gives time to restart it. The reminder is sent once per start.
+- **♻️ Restart timer** in the admin panel: shows the last start time and the reminder time. Tap **Restarted now** after a manual restart to reset the timer to today.
+- **`/restarttimer`** (admins only): shows the same status as text.
 
 ---
 
@@ -102,6 +112,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | `traffic.py` | Top-traffic tracking from the live console |
 | `console_api.py` | Reads live console entries from the providers |
 | `nudge.py` | Idle reminders for users who have been away during the day |
+| `restart_watch.py` | Restart reminder: tells admins to restart the bot 3 days after each start |
 | `arena.py` | Telegram side of the mini-game arena (menus, matches, rooms, rewards) |
 | `arena_games.py` | Game rules for the arena (pure Python, no Telegram) |
 | `arena_quiz_data.py` | Quiz questions in English and Bangla |
@@ -126,7 +137,7 @@ No database is needed. User data is stored in JSON files.
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-0.13.0
+cd nexora-telegram-bot-python-code/bot-0.13.1
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -182,6 +193,8 @@ python bot.py
 | `AI_MODEL` | optional | Override the default model of the chosen provider |
 | `AI_DAILY_LIMIT` | optional | Questions per user per day (default `30`). Admins are not limited |
 | `AI_ONLY_BOT` | optional | Set to `1` to answer only bot-related questions. Other questions get a polite off-topic reply |
+| `RESTART_REMIND_HOURS` | optional | Hours after a start before admins get the restart reminder (default `72`) |
+| `RESTART_CHECK_SECONDS` | optional | How often the restart timer is checked (default `1800`) |
 | `LOCAL_DATA_DIR` | optional | Where user data is saved (default `./data`) |
 
 ---
@@ -219,8 +232,15 @@ If you have more than one key, set `AI_PROVIDER` to choose which one is used. Ch
 | `/support` | Contact support |
 | `/withdraw` | Request a withdrawal |
 | `/help` | Same as the **ℹ️ About** button |
+| `/restarttimer` | Shows the restart timer status (admins only) |
 | `/admin` | Admin panel (admins only) |
 | `/user <id>` | User details (admins only) |
+
+---
+
+## Hosting and restarts
+
+Free hosting stops the bot after about 4 days, so it must be restarted by hand. The start time is saved in `data/settings.json`. Keep `data/` on persistent storage. If that folder is wiped on restart, the timer and user data are lost. Admins get a reminder 3 days after each start, and can also reset the timer from the admin panel.
 
 ---
 
