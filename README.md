@@ -1,18 +1,20 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-1.0.2-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.2)
+[![Version](https://img.shields.io/badge/version-1.0.3-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.3)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `1.0.2`** — see [`bot-1.0.2`](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.2). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `1.0.3`** — see [`bot-1.0.3`](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.3). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 1.0.3](#whats-new-in-103)
+- [What's new in 1.0.2](#whats-new-in-102)
 - [What's new in 1.0.0](#whats-new-in-100)
 - [What's new in 0.13.2](#whats-new-in-0132)
 - [What's new in 0.13.1](#whats-new-in-0131)
@@ -48,7 +50,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - **Arena (`/game`)** — mini-games: Quiz, Word Scramble, Code Breaker, Tic-Tac-Toe and Memory. Quiz questions and scramble words are refreshed by AI when an AI key is set. Single, duo and squad modes, private rooms, XP, ELO and daily rewards. English and Bangla. Game coins are separate from the money balance and never change it.
 - **AI Support (`/ai`)** — a chat assistant for questions about numbers, OTPs, rewards, balance, withdrawals, how to use the bot, and general or study questions. It remembers the recent conversation, and each user has a daily question limit.
 - **Idle reminders** — if you have been away for a while during the day, the bot tells you the busiest range right now. You can turn this off at any time (see [Commands](#commands)).
-- **ℹ️ About** — how it works, the bot version, and the developer's contact details.
+- **ℹ️ About** — how it works, the bot version, and the developer's contact details. The **📘 Features** button in About (or `/features`) shows an overview of all versions.
 
 ### For admins (`/admin`)
 
@@ -68,6 +70,27 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 1.0.3
+
+- **Features overview**: the **📘 Features** button in About, and the `/features` command, send a summary of every version and the current features as messages.
+
+---
+
+## What's new in 1.0.2
+
+- **Referral share comes from the friend's reward**: the referrer's 20% is taken from the referred user's reward, so the total paid out stays the same. The referred user is not told who invited them.
+- **Referral share on every SMS**: each reward the friend earns gives the referrer a share. Each SMS is paid only once.
+- The referrer's share goes to their balance and can be withdrawn.
+
+---
+
+## What's new in 1.0.1
+
+- **Referral earnings are visible to the referrer only**, in `/invite`, which shows the number of friends who joined and the total earned.
+- `REFERRAL_PERCENT` sets the share (default `20`).
 
 ---
 
@@ -143,6 +166,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | `arena_games.py` | Game rules for the arena (pure Python, no Telegram) |
 | `arena_quiz_data.py` | Built-in quiz questions in English and Bangla |
 | `features.py` | Referral share and badges |
+| `features_text.py` | Feature overview messages (the 📘 Features button) |
 | `arena_content.py` | Refreshes quiz questions and scramble words with AI, with fallback to built-in lists |
 | `channel_feed.py` | Optional channel feed of new SMS |
 | `otp_format.py` | Formats the OTP messages sent to users |
@@ -165,7 +189,7 @@ No database is needed. User data is stored in JSON files.
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-1.0.2
+cd nexora-telegram-bot-python-code/bot-1.0.3
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -261,6 +285,7 @@ If you have more than one key, set `AI_PROVIDER` to choose which one is used. Ch
 | `/support` | Contact support |
 | `/withdraw` | Request a withdrawal |
 | `/help` | Same as the **ℹ️ About** button |
+| `/features` | Feature overview, sent as messages |
 | `/invite` | Your invite link and referral earnings |
 | `/badges` | Your badges |
 | `/restarttimer` | Shows the restart timer status (admins only) |
