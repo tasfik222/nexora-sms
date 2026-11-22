@@ -2981,7 +2981,7 @@ async def post_init(app: Application) -> None:
     else:
         log.warning("CHANNEL_ID not set - channel SMS feed is OFF.")
     try:
-        await app.bot.set_my_commands([
+        user_menu = [
             BotCommand("start", "Open the menu"),
             BotCommand("balance", "Show my balance"),
             BotCommand("reminders", "Turn idle reminders on or off"),
@@ -2995,7 +2995,8 @@ async def post_init(app: Application) -> None:
             BotCommand("badges", "See your badges"),
             BotCommand("features", "Feature overview"),
             BotCommand("help", "About this bot"),
-        ])
+        ]
+        await app.bot.set_my_commands(user_menu)
     except TelegramError as e:
         log.warning("Could not set the command menu: %s", e)
     # Admin-only commands appear only in each admin's own chat with the bot.
@@ -3006,10 +3007,7 @@ async def post_init(app: Application) -> None:
     ]
     for aid in ADMIN_IDS:
         try:
-            await app.bot.set_my_commands(
-                [BotCommand("start", "Open the menu"), BotCommand("balance", "Show my balance")] + admin_menu,
-                scope=BotCommandScopeChat(chat_id=aid),
-            )
+            await app.bot.set_my_commands(user_menu + admin_menu, scope=BotCommandScopeChat(chat_id=aid))
         except TelegramError as e:
             log.warning("Could not set the admin command menu for %s: %s", aid, e)
 
