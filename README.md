@@ -1,18 +1,20 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-1.0.5-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.5)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.0)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `1.0.5`** — see [`bot-1.0.5`](https://github.com/tasfik222/nexora-sms/tree/main/bot-1.0.5). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `2.0.0`** — see [`bot-2.0.0`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.0). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 2.0.0](#whats-new-in-200)
+- [What's new in 1.0.6](#whats-new-in-106)
 - [What's new in 1.0.5](#whats-new-in-105)
 - [What's new in 1.0.4](#whats-new-in-104)
 - [What's new in 1.0.3](#whats-new-in-103)
@@ -72,6 +74,24 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 2.0.0
+
+- **SQLite database**: user data is stored in `data/nexora.db` instead of one JSON file per user. On the first start with an empty database, the old JSON files are imported once and kept as a backup.
+- **Fraud check**: an account that receives more than `FRAUD_MAX_CODES_PER_HOUR` codes (default `60`) in one hour is flagged for review. Its balance is kept, withdrawals are on hold, and every full admin gets an alert.
+- **`/unflag <user id>`** (full admins only): clears the review flag so withdrawals work again.
+- **Viewer role** (`VIEWER_IDS`): viewers can open the admin panel, user lists, pending and history, `/dashboard` and the restart timer, but cannot change anything.
+- **Admin command menu**: admins see `/dashboard`, `/restarttimer` and `/unflag` in their own chat with the bot.
+- **Storage switch**: `STORAGE=sqlite` (default) or `STORAGE=json`.
+
+---
+
+## What's new in 1.0.6
+
+- **Leave game**: a 🚪 Leave game button in every Arena match, and `/exitgame`. Leaving ends the match for everyone, with no rewards.
+- **Scramble fixes**: wrong guesses show a clear message, and words with fewer than 4 different letters are rejected.
 
 ---
 
@@ -169,7 +189,9 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | `bot.py` | Main Telegram bot: menus, number flow, SMS polling, withdrawals, admin panel |
 | `ai_support.py` | AI Support chat: providers, history, daily limit, busy handling |
 | `api_client.py` | Provider clients (Voltx, Zenex) behind one common interface |
-| `storage.py` | Local per-user records (balance, history, bans, last seen) with duplicate-credit protection |
+| `storage.py` | User records (balance, history, bans, last seen) with duplicate-credit protection |
+| `storage_sqlite.py` | SQLite backend for user records, and the one-time JSON import |
+| `fraud.py` | Flags accounts that receive too many codes in one hour |
 | `withdrawals.py` | Withdrawal requests and their status |
 | `settings.py` | Admin-controlled settings, saved in `data/settings.json` |
 | `traffic.py` | Top-traffic tracking from the live console |
@@ -195,7 +217,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - [`python-telegram-bot`](https://python-telegram-bot.org) `>= 22.7`
 - [`httpx`](https://www.python-httpx.org) `>= 0.25`
 
-No database is needed. User data is stored in JSON files.
+No separate database server is needed. User data is stored in a local SQLite file (`data/nexora.db`).
 
 ---
 
@@ -203,7 +225,7 @@ No database is needed. User data is stored in JSON files.
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-1.0.5
+cd nexora-telegram-bot-python-code/bot-2.0.0
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -235,7 +257,10 @@ python bot.py
 | `TELEGRAM_BOT_TOKEN` | yes | Bot token from [@BotFather](https://t.me/BotFather) |
 | `VOLTXSMS_API_KEY` | one of the two | Voltx provider key |
 | `ZENEX_API_KEY` | one of the two | Zenex provider key |
-| `ADMIN_IDS` | recommended | Comma-separated Telegram user IDs of the admins. Without it, the admin panel falls back to the built-in default ID |
+| `ADMIN_IDS` | recommended | Comma-separated Telegram user IDs of the full admins. Without it, the admin panel falls back to the built-in default ID |
+| `VIEWER_IDS` | optional | Comma-separated Telegram user IDs that can look at the admin panel and dashboard but cannot change anything |
+| `STORAGE` | optional | `sqlite` (default) or `json` |
+| `FRAUD_MAX_CODES_PER_HOUR` | optional | Codes per account per hour before the account is flagged (default `60`) |
 | `REQUIRED_GROUP_ID` | optional | Group users must join first. Use `off` to disable. The bot must be an admin of that group |
 | `REQUIRED_GROUP_LINK` | optional | Invite link for the Join button |
 | `CHANNEL_ID` | optional | Channel that receives every new SMS (bot must be a channel admin) |
@@ -262,7 +287,7 @@ python bot.py
 | `REFERRAL_PERCENT` | optional | Share of each reward that goes to the referrer (default `20`). It is taken from the referred user's reward |
 | `RESTART_REMIND_HOURS` | optional | Hours after a start before admins get the restart reminder (default `72`) |
 | `RESTART_CHECK_SECONDS` | optional | How often the restart timer is checked (default `1800`) |
-| `LOCAL_DATA_DIR` | optional | Where user data is saved (default `./data`) |
+| `LOCAL_DATA_DIR` | optional | Where user data is saved (default `./data`). The database is `nexora.db` in this folder |
 
 ---
 
@@ -306,6 +331,7 @@ If you have more than one key, set `AI_PROVIDER` to choose which one is used. Ch
 | `/dashboard` | Totals overview (admins only) |
 | `/admin` | Admin panel (admins only) |
 | `/user <id>` | User details (admins only) |
+| `/unflag <id>` | Clears a fraud review and reopens withdrawals (full admins only) |
 
 ---
 
@@ -318,7 +344,8 @@ Free hosting stops the bot after about 4 days, so it must be restarted by hand. 
 ## Data and secrets
 
 - Never commit your bot token, provider API keys or a `.env` file.
-- The `data/` folder holds real user records, balances, withdrawal details, and running Arena matches (`arena_matches.json`). Keep it out of version control. Add `data/` and `__pycache__/` to `.gitignore`.
+- The `data/` folder holds real user records, balances, withdrawal details, and running Arena matches (`arena_matches.json`). The user database is `data/nexora.db`. Keep the whole folder out of version control. Add `data/` and `__pycache__/` to `.gitignore`.
+- Keep the old `data/users/` JSON folder as a backup until you have checked balances after the first 2.0.0 start. The bot does not delete or change it.
 
 ---
 
