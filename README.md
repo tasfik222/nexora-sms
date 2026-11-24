@@ -1,18 +1,19 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-2.0.3-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.3)
+[![Version](https://img.shields.io/badge/version-2.0.4-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.4)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `2.0.3`** — see [`bot-2.0.3`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.3). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `2.0.4`** — see [`bot-2.0.4`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.4). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 2.0.4](#whats-new-in-204)
 - [What's new in 2.0.3](#whats-new-in-203)
 - [What's new in 2.0.2](#whats-new-in-202)
 - [What's new in 2.0.1](#whats-new-in-201)
@@ -77,6 +78,12 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 2.0.4
+
+- **Delete a note from the admin website**: each note has a 🗑 Delete button. The admin password must be typed again, and a note cannot be recovered after deletion.
 
 ---
 
@@ -260,7 +267,7 @@ No separate database server is needed. User data is stored in a local SQLite fil
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-2.0.3
+cd nexora-telegram-bot-python-code/bot-2.0.4
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -392,7 +399,7 @@ The admin website runs inside the bot. Your host must open the port set in `WEB_
 - Never commit your bot token, provider API keys or a `.env` file.
 - The `data/` folder holds real user records, balances, withdrawal details, and running Arena matches (`arena_matches.json`). The user database is `data/nexora.db`. Keep the whole folder out of version control. Add `data/` and `__pycache__/` to `.gitignore`.
 - Keep the old `data/users/` JSON folder as a backup until you have checked balances after the first 2.0.0 start. The bot does not delete or change it.
-- Admin notes are kept in `data/nexora.db`. Only `/notedel ... confirm` removes one.
+- Admin notes are kept in `data/nexora.db`. Only `/notedel ... confirm` (Telegram) or the website's Delete button (with the admin password) removes one.
 
 ---
 
