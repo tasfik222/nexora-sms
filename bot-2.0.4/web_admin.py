@@ -179,6 +179,14 @@ def render_page(rows: Iterable[dict], generated_at: str) -> str:
 STATUS_PILL = {"pending": "wait-p", "paid": "ok-p", "rejected": "ban-p", "cancelled": "flag-p"}
 
 
+def _amt(r: dict) -> float:
+    """Withdrawal amounts are stored as text such as "50.00" in some versions. Always show them as a number."""
+    try:
+        return float(r.get("amount_taka") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def filter_withdrawals(rows: list[dict], query: str) -> list[dict]:
     """Match the query against the account number (full or part), user ID, request ID or amount."""
     q = (query or "").strip().lower()
@@ -191,7 +199,7 @@ def filter_withdrawals(rows: list[dict], query: str) -> list[dict]:
     for r in rows:
         account = str(r.get("account") or "")
         plain = q.replace(" ", "") in f"{account} {r.get('user_id', '')} {r.get('id', '')}".replace(" ", "").lower() \
-            or q.replace(" ", "") in f"{r.get('amount_taka', 0):.2f}"
+            or q.replace(" ", "") in f"{_amt(r):.2f}"
         account_digits = "".join(ch for ch in account if ch.isdigit())
         if account_digits.startswith("880"):
             account_digits = account_digits[3:]
@@ -215,7 +223,7 @@ def render_withdrawals(rows: list[dict], status: str, query: str = "") -> str:
     body_rows = []
     for r in rows:
         body_rows.append(
-            f"<tr><td class='mono'>#{r['id']}</td><td class='num bal'>৳{r['amount_taka']:.2f}</td>"
+            f"<tr><td class='mono'>#{r['id']}</td><td class='num bal'>৳{_amt(r):.2f}</td>"
             f"<td>{html.escape(str(r.get('method') or '-'))}</td>"
             f"<td><span class='pill {STATUS_PILL.get(r['status'], 'flag-p')}'>{html.escape(r['status'])}</span></td>"
             f"<td class='muted'>{html.escape(str(r.get('created_at') or '')[:16].replace('T', ' '))}</td>"
@@ -229,7 +237,7 @@ def render_withdrawals(rows: list[dict], status: str, query: str = "") -> str:
 def render_withdrawal(r: dict, notice: str = "", notice_kind: str = "good") -> str:
     pending = r["status"] == "pending"
     note = f"<div class='notice {notice_kind}'>{html.escape(notice)}</div>" if notice else ""
-    info = (f"<div class='card'><div class='label'>Request</div><div class='value'>#{r['id']} · ৳{r['amount_taka']:.2f}</div>"
+    info = (f"<div class='card'><div class='label'>Request</div><div class='value'>#{r['id']} · ৳{_amt(r):.2f}</div>"
             f"<div class='field'><span class='label-s'>Method</span>{html.escape(str(r.get('method') or '-'))}</div>"
             f"<div class='field'><span class='label-s'>Account number</span><code>{html.escape(str(r.get('account') or '-'))}</code></div>"
             f"<div class='field'><span class='label-s'>Status</span><span class='pill {STATUS_PILL.get(r['status'], 'flag-p')}'>{html.escape(r['status'])}</span></div>"
