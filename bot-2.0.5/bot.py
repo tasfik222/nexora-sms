@@ -3108,7 +3108,8 @@ async def post_init(app: Application) -> None:
                 count_notes=lambda: notes_book().count(),
                 delete_note=lambda nid: notes_book().delete(nid),
             )
-            web_admin.start_server(store_ref.export_all, web_pw, web_admin.port_from_env(), ops=ops)
+            web_admin.start_server(store_ref.export_all, web_pw, web_admin.port_from_env(), ops=ops,
+                                   viewer_password=(os.getenv("WEB_VIEWER_PASSWORD") or "").strip())
         except (OSError, ValueError) as e:
             log.warning("Admin web page could not start: %s", e)
     if not ADMIN_IDS:
@@ -3188,7 +3189,6 @@ async def post_init(app: Application) -> None:
             BotCommand("badges", "See your badges"),
             BotCommand("features", "Feature overview"),
             BotCommand("help", "About this bot"),
-            BotCommand("website", "Open the website"),
         ]
         await app.bot.set_my_commands(user_menu)
     except TelegramError as e:
