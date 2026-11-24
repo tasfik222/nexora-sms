@@ -16,6 +16,7 @@ import base64
 import hmac
 import html
 import logging
+import re
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -255,8 +256,8 @@ def render_withdrawals(rows: list[dict], status: str, query: str = "") -> str:
     return layout("Withdrawals", "withdrawals", f"<div class='card'>{tabs}</div>{search}{table}")
 
 
-def render_withdrawal(r: dict, notice: str = "", notice_kind: str = "good") -> str:
-    pending = r["status"] == "pending"
+def render_withdrawal(r: dict, notice: str = "", notice_kind: str = "good", can_act: bool = True) -> str:
+    pending = r["status"] == "pending" and can_act
     note = f"<div class='notice {notice_kind}'>{html.escape(notice)}</div>" if notice else ""
     info = (f"<div class='card'><div class='label'>Request</div><div class='value'>#{r['id']} · ৳{_amt(r):.2f}</div>"
             f"<div class='field'><span class='label-s'>Method</span>{html.escape(str(r.get('method') or '-'))}</div>"
@@ -264,7 +265,9 @@ def render_withdrawal(r: dict, notice: str = "", notice_kind: str = "good") -> s
             f"<div class='field'><span class='label-s'>Status</span><span class='pill {STATUS_PILL.get(r['status'], 'flag-p')}'>{html.escape(r['status'])}</span></div>"
             f"<div class='field'><span class='label-s'>Created</span>{html.escape(str(r.get('created_at') or '-'))}</div>"
             f"<div class='field'><span class='label-s'>Reason</span>{html.escape(str(r.get('reason') or '-'))}</div></div>")
-    if pending:
+    if not can_act and r["status"] == "pending":
+        actions = "<div class='card muted'>View only. Pay and reject need the admin password.</div>"
+    elif pending:
         actions = f"""
 <div class="card"><form method="post" action="/w/{r['id']}/decide">
   <input type="hidden" name="decision" value="paid">
@@ -282,7 +285,7 @@ def render_withdrawal(r: dict, notice: str = "", notice_kind: str = "good") -> s
     return layout(f"Request #{r['id']}", "withdrawals", note + info + actions)
 
 
-def render_notes(rows: list[dict], total: int, page: int, pages: int, notice: str = "") -> str:
+def render_notes(rows: list[dict], total: int, page: int, pages: int, notice: str = "", can_act: bool = True) -> str:
     note = f"<div class='notice good'>{html.escape(notice)}</div>" if notice else ""
     form = """<div class="card"><form method="post" action="/notes">
 <div class="field"><span class="label-s">New note</span><textarea name="text" maxlength="2000" required></textarea></div>
@@ -303,6 +306,9 @@ def render_notes(rows: list[dict], total: int, page: int, pages: int, notice: st
         nav += f"<a class='btn' style='margin-right:6px' href='/notes?p={page - 1}'>⬅️ Newer</a>"
     if page + 1 < pages:
         nav += f"<a class='btn' href='/notes?p={page + 1}'>Older ➡️</a>"
+    if not can_act:
+        form = "<div class='card muted'>View only. Adding and deleting notes needs the admin password.</div>"
+        items = [re.sub(r"<details.*?</details>", "", it, flags=re.S) for it in items]
     body = note + form + f"<div class='muted'>{total} notes</div>" + "".join(items) + f"<div style='margin-top:10px'>{nav}</div>"
     return layout("Notes", "notes", body)
 
@@ -322,7 +328,7 @@ def same_password(given: str, expected: str) -> bool:
     return hmac.compare_digest((given or "").encode(), expected.encode())
 
 
-def make_handler(get_records, password: str, ops: Optional[Ops]):
+def make_handler(get_records, password: str, ops: Optional[Ops], viewer_password: str = ""):
     class Handler(BaseHTTPRequestHandler):
         server_version = "NexoraAdmin"
 
@@ -354,13 +360,22 @@ def make_handler(get_records, password: str, ops: Optional[Ops]):
             if too_many_failures(ip, now):
                 self._send(429, "Too many wrong passwords. Try again in a few minutes.", "text/plain; charset=utf-8")
                 return False
-            if check_basic_auth(self.headers.get("Authorization"), password):
+            header = self.headers.get("Authorization")
+            if check_basic_auth(header, password):
                 clear_failures(ip)
+                self._role = "admin"
                 return True
-            if self.headers.get("Authorization"):
+            if viewer_password and check_basic_auth(header, viewer_password):
+                clear_failures(ip)
+                self._role = "viewer"
+                return True
+            if header:
                 record_failure(ip, now)
             self._deny()
             return False
+
+        def _can_act(self) -> bool:
+            return getattr(self, "_role", "") == "admin"
 
         def _form(self) -> dict:
             length = min(int(self.headers.get("Content-Length") or 0), MAX_BODY)
@@ -397,14 +412,14 @@ def make_handler(get_records, password: str, ops: Optional[Ops]):
                     if not row:
                         self._send(404, layout("Not found", "withdrawals", "<div class='card'>No such request.</div>"))
                         return
-                    self._send(200, render_withdrawal(row))
+                    self._send(200, render_withdrawal(row, can_act=self._can_act()))
                     return
                 if path == "/notes":
                     page = int((qs.get("p") or ["0"])[0]) if (qs.get("p") or ["0"])[0].isdigit() else 0
                     total = ops.count_notes()
                     pages = max(1, -(-total // 10))
                     page = min(page, pages - 1)
-                    self._send(200, render_notes(ops.list_notes(page * 10, 10), total, page, pages))
+                    self._send(200, render_notes(ops.list_notes(page * 10, 10), total, page, pages, can_act=self._can_act()))
                     return
                 self._send(404, "Not found")
             except Exception:
@@ -418,6 +433,9 @@ def make_handler(get_records, password: str, ops: Optional[Ops]):
                 self._send(404, "Not found")
                 return
             path = urlsplit(self.path).path
+            if not self._can_act():
+                self._send(403, "View only. This password cannot change anything.", "text/plain; charset=utf-8")
+                return
             try:
                 form = self._form()
                 if path == "/notes":
@@ -472,12 +490,15 @@ def make_handler(get_records, password: str, ops: Optional[Ops]):
 
 
 def start_server(get_records, password: str, port: int, host: str = "0.0.0.0",
-                 ops: Optional[Ops] = None) -> ThreadingHTTPServer | None:
+                 ops: Optional[Ops] = None, viewer_password: str = "") -> ThreadingHTTPServer | None:
     """Start the website in a background thread. Returns None when the password is missing or too short."""
     if len(password or "") < MIN_PASSWORD:
         log.warning("Admin web page is OFF: set WEB_ADMIN_PASSWORD (at least %d characters).", MIN_PASSWORD)
         return None
-    server = ThreadingHTTPServer((host, port), make_handler(get_records, password, ops))
+    if viewer_password and (len(viewer_password) < MIN_PASSWORD or viewer_password == password):
+        log.warning("Viewer password ignored: it must be at least %d characters and different from the admin password.", MIN_PASSWORD)
+        viewer_password = ""
+    server = ThreadingHTTPServer((host, port), make_handler(get_records, password, ops, viewer_password))
     threading.Thread(target=server.serve_forever, name="admin-web", daemon=True).start()
     log.info("Admin web page is on port %d (password protected).", port)
     return server
