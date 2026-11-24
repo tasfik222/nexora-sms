@@ -1,0 +1,45 @@
+{
+  "user_id": 5759085341,
+  "username": "tasfikabdullah6",
+  "balance": 0,
+  "total_codes": 0,
+  "created_at": "2026-11-11T10:00:54+00:00",
+  "updated_at": "2026-11-22T07:55:39+00:00",
+  "rev": 126,
+  "history": [],
+  "credited_otp_ids": [],
+  "unit": "paisa",
+  "balance_taka": "0.00",
+  "first_name": "Tasfik",
+  "banned": false,
+  "arena": {
+    "lang": "en",
+    "elo": 1060,
+    "xp": 835,
+    "coins": 1290,
+    "played": 30,
+    "wins": 23,
+    "daily_at": 1795302599.424942,
+    "streak": 1,
+    "stats": {
+      "tictactoe": {
+        "played": 9,
+        "wins": 4
+      },
+      "scramble": {
+        "played": 17,
+        "wins": 17
+      },
+      "memory": {
+        "played": 1,
+        "wins": 1
+      },
+      "quiz": {
+        "played": 3,
+        "wins": 1
+      }
+    }
+  },
+  "last_seen": "2026-11-22T04:54:31+00:00",
+  "nudged_for": "2026-11-22T04:54:31+00:00"
+}
