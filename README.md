@@ -1,18 +1,21 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.0)
+[![Version](https://img.shields.io/badge/version-2.0.3-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.3)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `2.0.0`** — see [`bot-2.0.0`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.0). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `2.0.3`** — see [`bot-2.0.3`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.3). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 2.0.3](#whats-new-in-203)
+- [What's new in 2.0.2](#whats-new-in-202)
+- [What's new in 2.0.1](#whats-new-in-201)
 - [What's new in 2.0.0](#whats-new-in-200)
 - [What's new in 1.0.6](#whats-new-in-106)
 - [What's new in 1.0.5](#whats-new-in-105)
@@ -77,6 +80,32 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 
 ---
 
+## What's new in 2.0.3
+
+- **`/website`** (admins only): sends the admin website link. Set `WEB_ADMIN_URL` in the hosting Environment.
+- **Startup fix**: the admin website now starts after the withdrawal store is ready, so the bot no longer crashes on start with `KeyError: 'withdrawals'`.
+
+---
+
+## What's new in 2.0.2
+
+- **Admin website can do the main admin work**: Users, Withdrawals and Notes, behind the password.
+- **Withdrawals on the website**: list by Pending, Paid or Rejected. Open a request to see the full account number. Paying or rejecting asks for the admin password again, and each action is saved as an admin note.
+- **Search on Withdrawals**: search by account number (full or part, with or without `+880`, spaces or dashes), user ID, request number or amount.
+- **Notes on the website**: read notes and add new ones.
+
+---
+
+## What's new in 2.0.1
+
+- **Payout group is a required group**: users must join it, together with the required group, to use the bot. Set `PAYOUT_GROUP_ID`. Optional: `PAYOUT_GROUP_LINK` for the Join button.
+- **Payout post**: each approved withdrawal is posted to the payout group with the name, username and full account number hidden. Only the first 4 digits of the account are shown.
+- **Admin notes**: `/note <text>` saves a note. Each note is kept separately. Notes are shown in the admin panel (📝 Notes).
+- **`/notedel <number> confirm`** (full admins only): deletes one note after confirmation.
+- **Admin website design**: colourful layout, stat cards, and search on the users list.
+
+---
+
 ## What's new in 2.0.0
 
 - **SQLite database**: user data is stored in `data/nexora.db` instead of one JSON file per user. On the first start with an empty database, the old JSON files are imported once and kept as a backup.
@@ -85,6 +114,8 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - **Viewer role** (`VIEWER_IDS`): viewers can open the admin panel, user lists, pending and history, `/dashboard` and the restart timer, but cannot change anything.
 - **Admin command menu**: admins see `/dashboard`, `/restarttimer` and `/unflag` in their own chat with the bot.
 - **Storage switch**: `STORAGE=sqlite` (default) or `STORAGE=json`.
+- **Admin website (password protected)**: started with `WEB_ADMIN_PASSWORD` (at least 8 characters). Port comes from `WEB_PORT` or `PORT`.
+- **`/addbalance <user id> <taka> <reason>`** (full admins only): adds balance once and writes an admin note. Use with care.
 
 ---
 
@@ -207,6 +238,10 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | `channel_feed.py` | Optional channel feed of new SMS |
 | `otp_format.py` | Formats the OTP messages sent to users |
 | `backup.py` | Creates and restores data backups |
+| `web_admin.py` | Admin website (password protected): users, withdrawals, notes |
+| `notes_store.py` | Admin notes, saved in the database |
+| `payout_post.py` | The masked payout post for the payout group |
+| `manual_credit.py` | Checks for `/addbalance` input |
 | `tests/` | Automated tests |
 
 ---
@@ -225,7 +260,7 @@ No separate database server is needed. User data is stored in a local SQLite fil
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-2.0.0
+cd nexora-telegram-bot-python-code/bot-2.0.3
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -287,6 +322,11 @@ python bot.py
 | `REFERRAL_PERCENT` | optional | Share of each reward that goes to the referrer (default `20`). It is taken from the referred user's reward |
 | `RESTART_REMIND_HOURS` | optional | Hours after a start before admins get the restart reminder (default `72`) |
 | `RESTART_CHECK_SECONDS` | optional | How often the restart timer is checked (default `1800`) |
+| `PAYOUT_GROUP_ID` | optional | Group where approved withdrawals are posted. Users must also join it. The bot must be an admin there |
+| `PAYOUT_GROUP_LINK` | optional | Invite link for the payout group's Join button |
+| `WEB_ADMIN_PASSWORD` | optional | Turns on the admin website. At least 8 characters. Without it the website stays off |
+| `WEB_PORT` | optional | Port for the admin website. If empty, `PORT` is used (default `8080`) |
+| `WEB_ADMIN_URL` | optional | The admin website link sent by `/website` (for example `https://your-domain`) |
 | `LOCAL_DATA_DIR` | optional | Where user data is saved (default `./data`). The database is `nexora.db` in this folder |
 
 ---
@@ -332,12 +372,18 @@ If you have more than one key, set `AI_PROVIDER` to choose which one is used. Ch
 | `/admin` | Admin panel (admins only) |
 | `/user <id>` | User details (admins only) |
 | `/unflag <id>` | Clears a fraud review and reopens withdrawals (full admins only) |
+| `/note <text>` | Saves an admin note (full admins only) |
+| `/notedel <number> confirm` | Deletes one admin note (full admins only) |
+| `/addbalance <id> <taka> <reason>` | Adds balance once and writes a note (full admins only) |
+| `/website` | Sends the admin website link (admins only) |
 
 ---
 
 ## Hosting and restarts
 
 Free hosting stops the bot after about 4 days, so it must be restarted by hand. The start time is saved in `data/settings.json`. Keep `data/` on persistent storage. If that folder is wiped on restart, the timer and user data are lost. Admins get a reminder 3 days after each start, and can also reset the timer from the admin panel.
+
+The admin website runs inside the bot. Your host must open the port set in `WEB_PORT` (or `PORT`) and give it a domain. Use HTTPS, because the password is sent with each request.
 
 ---
 
@@ -346,6 +392,7 @@ Free hosting stops the bot after about 4 days, so it must be restarted by hand. 
 - Never commit your bot token, provider API keys or a `.env` file.
 - The `data/` folder holds real user records, balances, withdrawal details, and running Arena matches (`arena_matches.json`). The user database is `data/nexora.db`. Keep the whole folder out of version control. Add `data/` and `__pycache__/` to `.gitignore`.
 - Keep the old `data/users/` JSON folder as a backup until you have checked balances after the first 2.0.0 start. The bot does not delete or change it.
+- Admin notes are kept in `data/nexora.db`. Only `/notedel ... confirm` removes one.
 
 ---
 
