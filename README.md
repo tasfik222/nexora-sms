@@ -1,18 +1,19 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-2.0.4-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.4)
+[![Version](https://img.shields.io/badge/version-2.0.5-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.5)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `2.0.4`** — see [`bot-2.0.4`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.4). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `2.0.5`** — see [`bot-2.0.5`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.5). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 2.0.5](#whats-new-in-205)
 - [What's new in 2.0.4](#whats-new-in-204)
 - [What's new in 2.0.3](#whats-new-in-203)
 - [What's new in 2.0.2](#whats-new-in-202)
@@ -78,6 +79,14 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Optional channel feed that posts every new SMS (numbers are masked by default).
 - Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 2.0.5
+
+- **`/website` for everyone**: any user can type `/website` to get the admin website link. The website still asks for the admin password.
+- **Login protection**: 5 wrong passwords from one address block that address for 10 minutes.
+- **Command menu**: `/website` appears in the normal menu.
 
 ---
 
@@ -267,7 +276,7 @@ No separate database server is needed. User data is stored in a local SQLite fil
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-2.0.4
+cd nexora-telegram-bot-python-code/bot-2.0.5
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -331,7 +340,7 @@ python bot.py
 | `RESTART_CHECK_SECONDS` | optional | How often the restart timer is checked (default `1800`) |
 | `PAYOUT_GROUP_ID` | optional | Group where approved withdrawals are posted. Users must also join it. The bot must be an admin there |
 | `PAYOUT_GROUP_LINK` | optional | Invite link for the payout group's Join button |
-| `WEB_ADMIN_PASSWORD` | optional | Turns on the admin website. At least 8 characters. Without it the website stays off |
+| `WEB_ADMIN_PASSWORD` | optional | Turns on the admin website. At least 8 characters (12 or more recommended). Without it the website stays off |
 | `WEB_PORT` | optional | Port for the admin website. If empty, `PORT` is used (default `8080`) |
 | `WEB_ADMIN_URL` | optional | The admin website link sent by `/website` (for example `https://your-domain`) |
 | `LOCAL_DATA_DIR` | optional | Where user data is saved (default `./data`). The database is `nexora.db` in this folder |
@@ -382,7 +391,7 @@ If you have more than one key, set `AI_PROVIDER` to choose which one is used. Ch
 | `/note <text>` | Saves an admin note (full admins only) |
 | `/notedel <number> confirm` | Deletes one admin note (full admins only) |
 | `/addbalance <id> <taka> <reason>` | Adds balance once and writes a note (full admins only) |
-| `/website` | Sends the admin website link (admins only) |
+| `/website` | Sends the admin website link. The website asks for the admin password |
 
 ---
 
