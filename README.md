@@ -1,18 +1,19 @@
 # Nexora Telegram Bot
 
-[![Version](https://img.shields.io/badge/version-2.0.5-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.5)
+[![Version](https://img.shields.io/badge/version-2.0.6-blue?style=for-the-badge)](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.6)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/8unNuUkyE9)
 
 A Python Telegram bot that gives users temporary phone numbers from SMS provider APIs, delivers every incoming OTP straight into Telegram, and pays a small reward for each SMS received. It includes an AI support chat, an admin panel, withdrawal requests, live traffic stats, backups, idle reminders and a built-in mini-game arena.
 
-> **Latest version: `2.0.5`** — see [`bot-2.0.5`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.5). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
+> **Latest version: `2.0.6`** — see [`bot-2.0.6`](https://github.com/tasfik222/nexora-sms/tree/main/bot-2.0.6). Older folders (`files`, `files v2` … `file v10 beta`, `bot-0.12.0`) are kept for history.
 
 ---
 
 ## Table of contents
 
 - [Features](#features)
+- [What's new in 2.0.6](#whats-new-in-206)
 - [What's new in 2.0.5](#whats-new-in-205)
 - [What's new in 2.0.4](#whats-new-in-204)
 - [What's new in 2.0.3](#whats-new-in-203)
@@ -48,6 +49,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 ### For users
 
 - **Get Number** — pick a server, a service (WhatsApp, Telegram, Facebook, …) and a range, then receive number(s) instantly.
+- **Get Number 3** — numbers added by the admin in the Number pool. Each number is given once, and the SMS are read from the Lamix panel (see [What's new in 2.0.6](#whats-new-in-206)).
 - **Automatic OTP delivery** — the bot checks for new SMS every 5 seconds for up to 20 minutes. Every new SMS on the number is delivered and rewarded, not just the first one.
 - **Change Number** — get a new number from the same range with one tap. The new number arrives as a fresh message at the bottom of the chat, and the previous message is removed.
 - **Balance** — rewards are stored in paisa (100 paisa = ৳1), so there are no floating-point errors.
@@ -77,8 +79,19 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 - Users must join a required group before they can use the bot.
 - In groups the bot stays silent: it does not answer commands typed in a group. Use private chat.
 - Optional channel feed that posts every new SMS (numbers are masked by default).
-- Two SMS providers are supported (Voltx and Zenex). A provider without an API key is hidden automatically.
+- Three SMS sources: Voltx, Zenex and Get Number 3 (Lamix). A source without an API key is hidden automatically.
 - AI Support is enabled only when at least one AI provider key is set. Without a key, the AI button and `/ai` are hidden.
+
+---
+
+## What's new in 2.0.6
+
+- **Get Number 3**: a third number source. The admin pastes numbers in the new **📱 Number pool** panel, and each number is given to one user only. The SMS for those numbers are read from the Lamix panel, and the bot checks for 20 minutes after the order.
+- **Reward**: ৳0.30 per SMS on Get Number 3.
+- **Main menu**: the Get Number 3 button appears only when `LAMIX_API_KEY` is set.
+- **Remove numbers**: in the pool panel, paste numbers to remove them, or remove all free numbers at once (with confirmation). Numbers already given out are never removed, so running orders keep working.
+- **Lamix API**: requests use the `Authorization: Bearer` header. The bot waits as long as the provider asks when it returns `429`.
+- **Features**: the 📘 Features page shows 2.0.6 as the current version.
 
 ---
 
@@ -234,6 +247,7 @@ A Python Telegram bot that gives users temporary phone numbers from SMS provider
 | File | Purpose |
 |---|---|
 | `bot.py` | Main Telegram bot: menus, number flow, SMS polling, withdrawals, admin panel |
+| `crapi_pool.py` | Get Number 3: the admin number pool and the Lamix SMS client |
 | `ai_support.py` | AI Support chat: providers, history, daily limit, busy handling |
 | `api_client.py` | Provider clients (Voltx, Zenex) behind one common interface |
 | `storage.py` | User records (balance, history, bans, last seen) with duplicate-credit protection |
@@ -276,7 +290,7 @@ No separate database server is needed. User data is stored in a local SQLite fil
 
 ```bash
 git clone https://github.com/tasfik222/nexora-telegram-bot-python-code.git
-cd nexora-telegram-bot-python-code/bot-2.0.5
+cd nexora-telegram-bot-python-code/bot-2.0.6
 
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -308,6 +322,7 @@ python bot.py
 | `TELEGRAM_BOT_TOKEN` | yes | Bot token from [@BotFather](https://t.me/BotFather) |
 | `VOLTXSMS_API_KEY` | one of the two | Voltx provider key |
 | `ZENEX_API_KEY` | one of the two | Zenex provider key |
+| `LAMIX_API_KEY` | optional | Lamix panel API token for Get Number 3. Without it Get Number 3 stays hidden |
 | `ADMIN_IDS` | recommended | Comma-separated Telegram user IDs of the full admins. Without it, the admin panel falls back to the built-in default ID |
 | `VIEWER_IDS` | optional | Comma-separated Telegram user IDs that can look at the admin panel and dashboard but cannot change anything |
 | `STORAGE` | optional | `sqlite` (default) or `json` |
